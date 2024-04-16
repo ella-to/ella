@@ -1,0 +1,8 @@
+model File {
+    Name: string
+    Size: int64
+}
+
+service StorageService {
+   http UploadFiles(files: file, id: string) => (results: []File)
+}

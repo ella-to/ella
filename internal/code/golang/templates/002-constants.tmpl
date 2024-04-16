@@ -1,0 +1,8 @@
+
+//
+// Constants
+//
+
+{{ range $constant := .Constants -}}
+const {{ $constant.Name }} = {{ $constant.Value }}
+{{ end }}

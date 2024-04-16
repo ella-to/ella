@@ -1,0 +1,57 @@
+
+//
+// Client Handlers
+//
+
+{{ range $service := .HttpServices }}
+
+type http{{ $service.Name }}Client struct {
+	client *http.Client
+	host   string
+}
+
+var _ Http{{ $service.Name }} = (* http{{ $service.Name }}Client)(nil)
+
+func CreateHttp{{ $service.Name }}Client(host string, client *http.Client) Http{{ $service.Name }} {
+	return &http{{ $service.Name }}Client{
+		host:   host,
+		client: client,
+	}
+}
+
+{{- range $method := $service.Methods }}
+
+func (s * http{{ $service.Name }}Client) {{ $method.Name }}(ctx context.Context {{ $method.Args.Definitions }}) ({{ $method.Returns.Definitions }}) { 
+	url, err := urlPathJoin(s.host, {{ $method.PathName }})
+	if err != nil {
+		return
+	}
+
+	_in_ := struct {
+        {{ $method.ArgsStructDefinitions true }}
+    }{
+        {{ $method.ArgsNamesValues }}
+    }
+
+	_out_ := struct {
+        {{ $method.ReturnsStructDefinitions }}
+    }{}
+
+{{- if $method.IsFileUpload }}
+	err = sendHttpFilesUpload(ctx, s.client, url, "{{ $method.Options.HttpMethod }}", &_in_, files, &_out_)
+{{- else if and $method.IsStream $method.IsBinary }}
+	{{ $method.ReturnsNames "_out_."}} err = callHttpEndpoint(ctx, s.client, url, "{{ $method.Options.HttpMethod }}", &_in_)
+{{- else if $method.IsStream }}
+	{{ $method.ReturnsNames "_out_."}} err = callHttpServiceStreamMethod[{{ $method.ReturnStreamType }}](ctx, s.client, url, "{{ $method.Options.HttpMethod }}", &_in_)
+{{- else }}
+	err = callHttpServiceMethod(ctx, s.client, url, "{{ $method.Options.HttpMethod }}", &_in_, &_out_)
+{{- end }}
+	if err != nil {
+		return
+	}
+
+	return {{ $method.ReturnsNames "_out_."}} nil
+}
+
+{{- end }}
+{{ end }}
