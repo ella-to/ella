@@ -2,41 +2,28 @@
 // RPC UTILITIES
 // Helper utilities for dealing with RPC's adapters
 
-type rpcMsg interface {
-	Topic() string
-	Data() []byte
-	Reply(data []byte) error
-}
-
-type recvFunc func(msg rpcMsg)
-
 type rpcAdaptor interface {
-	Register(topic string, recv recvFunc) (drain func(), err error)
-	Send(ctx context.Context, topic string, data []byte) ([]byte, error)
+	Request(ctx context.Context, topic string, in any) (json.RawMessage, error)
+	Reply(ctx context.Context, topic string, fn func(ctx context.Context, in json.RawMessage) (out any, err error)) error
 }
 
-func rpcSend[T any](ctx context.Context, adaptor rpcAdaptor, topic string, in any, out *T) (*T, error) {
-	data, err := json.Marshal(in)
+func rpcSend(ctx context.Context, adaptor rpcAdaptor, topic string, in any, out any) (error) {
+	data, err := adaptor.Request(ctx, topic, in)
 	if err != nil {
-		return nil, err
-	}
-
-	data, err = adaptor.Send(ctx, topic, data)
-	if err != nil {
-		return nil, err
+		return err
 	}
 
 	err, ok := decodeRpcError(data)
 	if ok {
-		return nil, err
+		return err
 	}
 
 	err = json.Unmarshal(data, out)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
-	return out, nil
+	return nil
 }
 
 // CONTEXT UTILITIES
