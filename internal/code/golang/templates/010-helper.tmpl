@@ -235,7 +235,7 @@ func createStreamServiceMethod[ReqMsg any](method string, hasFields bool, fn fun
 	}
 }
 
-func createStreamBinaryServiceMethod[ReqMsg any](method string, contentType string, hasFields bool, fn func(ctx context.Context, req *ReqMsg) (io.Reader, error)) httpServiceMethodHandler {
+func createStreamBinaryServiceMethod[ReqMsg any](method string, hasFields bool, fn func(ctx context.Context, req *ReqMsg) (io.Reader, string, string, error)) httpServiceMethodHandler {
 	return func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		if r.Method != method {
 			httpResponseError(w, ErrMethodNotAllowed.WithMsg("method %q not allowed", r.Method))
@@ -272,7 +272,7 @@ func createStreamBinaryServiceMethod[ReqMsg any](method string, contentType stri
 		ctx, cancel := context.WithCancel(ctx)
 		defer cancel()
 
-		streamReader, err := fn(ctx, &reqMsg)
+		streamReader, filename, contentType, err := fn(ctx, &reqMsg)
 		if err != nil {
 			httpResponseError(w, err)
 			return
@@ -286,6 +286,9 @@ func createStreamBinaryServiceMethod[ReqMsg any](method string, contentType stri
 		}
 
 		w.Header().Set("Content-Type", contentType)
+		if filename != "" {
+			w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%s", filename))
+		}
 
 		io.Copy(w, streamReader)
 	}
@@ -401,6 +404,47 @@ func callHttpEndpoint(ctx context.Context, client *http.Client, url string, meth
 	}
 
 	return resp.Body, nil
+}
+
+func callHttpStreamEndpoint(ctx context.Context, client *http.Client, url string, method string, in any) (r io.ReadCloser, filename string, contentType string, err error) {
+	if !isStructEmpty(in) {
+		if method == http.MethodGet {
+			url, err = structToURL(url, in)
+			if err != nil {
+				return nil, "", "", err
+			}
+		} else {
+			r = jsonEncodeReader(in)
+		}
+	}
+
+	req, err := http.NewRequestWithContext(ctx, method, url, r)
+	if err != nil {
+		return nil, "", "", err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, "", "", err
+	}
+
+	injectHttpClientResponse(ctx, resp)
+
+	if resp.StatusCode >= 300 {
+		defer resp.Body.Close()
+		err := Error{}
+		if err := json.NewDecoder(resp.Body).Decode(&err); err != nil {
+			return nil, "", "", err
+		}
+		return nil, "", "", err
+	}
+
+	contentType = resp.Header.Get("Content-Type")
+	filename = strings.Replace(resp.Header.Get("Content-Disposition"), "attachment; filename=", "", 1)
+
+	return resp.Body, filename, contentType, nil
 }
 
 func callHttpServiceMethod(ctx context.Context, client *http.Client, url string, method string, in any, out any) (err error) {
