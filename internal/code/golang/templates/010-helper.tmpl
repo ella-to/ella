@@ -871,7 +871,7 @@ func (e Error) WithMsg(msg string, args ...any) Error {
 // - 3 segments "<code>:-:<message>:-:<http_status> (for normal error with http status code)
 // - 4 segments "<code>:-:<message>:-:<http_status>:-:<cause>" (for error with cause)
 // NOTE: use custom encode/decode for performance reasons
-func encodeRpcError(err error) []byte {
+func encodeRpcError(err error) string {
 	var sb strings.Builder
 
 	sb.WriteString("EllaError:-:")
