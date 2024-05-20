@@ -872,30 +872,32 @@ func (e Error) WithMsg(msg string, args ...any) Error {
 // - 4 segments "<code>:-:<message>:-:<http_status>:-:<cause>" (for error with cause)
 // NOTE: use custom encode/decode for performance reasons
 func encodeRpcError(err error) []byte {
-	var b bytes.Buffer
+	var sb strings.Builder
 
-	b.WriteString("EllaError:-:")
+	sb.WriteString("EllaError:-:")
 
 	e, ok := err.(Error)
 	if !ok {
-		b.WriteString(err.Error())
-		return b.Bytes()
+		sb.WriteString(err.Error())
+		return sb.String()
 	}
 
-	b.WriteString(strconv.FormatInt(int64(e.Code), 10))
-	b.WriteString(":-:")
-	b.WriteString(e.Message)
-	b.WriteString(":-:")
-	b.WriteString(strconv.FormatInt(int64(e.HTTPStatus), 10))
+	sb.WriteString(strconv.FormatInt(int64(e.Code), 10))
+	sb.WriteString(":-:")
+	sb.WriteString(e.Message)
+	sb.WriteString(":-:")
+	sb.WriteString(strconv.FormatInt(int64(e.HTTPStatus), 10))
 	if e.cause != nil {
-		b.WriteString(":-:")
-		b.WriteString(e.cause.Error())
+		sb.WriteString(":-:")
+		sb.WriteString(e.cause.Error())
 	}
 
-	return b.Bytes()
+	return sb.String()
 }
 
 func decodeRpcError(b []byte) (Error, bool) {
+	b = bytes.Trim(b, `"`)
+	
 	if !bytes.HasPrefix(b, []byte("EllaError:-:")) {
 		return Error{}, false
 	}
