@@ -908,7 +908,7 @@ func decodeRpcError(b []byte) (Error, bool) {
 
 	switch len(segments) {
 	case 1: // normal error
-		return ErrInternal.WithMsg(string(segments[1])), true
+		return ErrInternal.WithMsg(string(segments[0])), true
 	case 3: // error with http status
 		code, err := strconv.ParseInt(string(segments[0]), 10, 64)
 		if err != nil {
