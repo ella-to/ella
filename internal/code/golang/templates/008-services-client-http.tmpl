@@ -6,13 +6,13 @@
 {{ range $service := .HttpServices }}
 
 type http{{ $service.Name }}Client struct {
-	client *http.Client
+	client httpClientDoer
 	host   string
 }
 
 var _ Http{{ $service.Name }} = (* http{{ $service.Name }}Client)(nil)
 
-func CreateHttp{{ $service.Name }}Client(host string, client *http.Client) Http{{ $service.Name }} {
+func CreateHttp{{ $service.Name }}Client(host string, client httpClientDoer) Http{{ $service.Name }} {
 	return &http{{ $service.Name }}Client{
 		host:   host,
 		client: client,

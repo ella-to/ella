@@ -8,7 +8,7 @@ import (
 )
 
 func TestRpcCall(t *testing.T) {
-	adapter := NewMemoryAdapter()
+	adapter := NewMemory()
 
 	done, err := StartRpcGreetingServiceServer(&RpcGreetingServiceImpl{}, adapter)
 	assert.NoError(t, err)

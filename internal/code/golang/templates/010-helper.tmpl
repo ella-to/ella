@@ -89,6 +89,10 @@ func injectHttpClientResponse(ctx context.Context, resp *http.Response) {
 // HTTP SERVER UTILITIES
 // Helper utilities for creating http servers
 
+type httpClientDoer interface {
+	Do(req *http.Request) (*http.Response, error)
+}
+
 type httpServiceMethodHandler func(context.Context, http.ResponseWriter, *http.Request)
 
 func createServiceMethodHandler[ReqMsg, RespMsg any](method string, hasFields bool, fn func(ctx context.Context, req *ReqMsg) (*RespMsg, error)) httpServiceMethodHandler {
@@ -355,7 +359,7 @@ func urlPathJoin(host string, paths ...string) (string, error) {
 	return u.String(), nil
 }
 
-func callHttpEndpoint(ctx context.Context, client *http.Client, url string, method string, in any) (r io.ReadCloser, err error) {
+func callHttpEndpoint(ctx context.Context, client httpClientDoer, url string, method string, in any) (r io.ReadCloser, err error) {
 	if !isStructEmpty(in) {
 		if method == http.MethodGet {
 			url, err = structToURL(url, in)
@@ -393,7 +397,7 @@ func callHttpEndpoint(ctx context.Context, client *http.Client, url string, meth
 	return resp.Body, nil
 }
 
-func callHttpStreamEndpoint(ctx context.Context, client *http.Client, url string, method string, in any) (r io.ReadCloser, filename string, contentType string, err error) {
+func callHttpStreamEndpoint(ctx context.Context, client httpClientDoer, url string, method string, in any) (r io.ReadCloser, filename string, contentType string, err error) {
 	if !isStructEmpty(in) {
 		if method == http.MethodGet {
 			url, err = structToURL(url, in)
@@ -434,7 +438,7 @@ func callHttpStreamEndpoint(ctx context.Context, client *http.Client, url string
 	return resp.Body, filename, contentType, nil
 }
 
-func callHttpServiceMethod(ctx context.Context, client *http.Client, url string, method string, in any, out any) (err error) {
+func callHttpServiceMethod(ctx context.Context, client httpClientDoer, url string, method string, in any, out any) (err error) {
 	r, err := callHttpEndpoint(ctx, client, url, method, in)
 	if err != nil {
 		return err
@@ -448,7 +452,7 @@ func callHttpServiceMethod(ctx context.Context, client *http.Client, url string,
 	return json.NewDecoder(r).Decode(out)
 }
 
-func sendHttpFilesUpload(ctx context.Context, client *http.Client, url string, method string, payload any, files func() (string, io.Reader, error), respBody any) error {
+func sendHttpFilesUpload(ctx context.Context, client httpClientDoer, url string, method string, payload any, files func() (string, io.Reader, error), respBody any) error {
 	pr, pw := io.Pipe()
 
 	boundary := getRandomBoundary()
@@ -538,7 +542,7 @@ func sendHttpFilesUpload(ctx context.Context, client *http.Client, url string, m
 	return json.NewDecoder(resp.Body).Decode(respBody)
 }
 
-func callHttpServiceStreamMethod[Resp any](ctx context.Context, client *http.Client, url string, method string, in any) (<-chan Resp, error) {
+func callHttpServiceStreamMethod[Resp any](ctx context.Context, client httpClientDoer, url string, method string, in any) (<-chan Resp, error) {
 	r, err := callHttpEndpoint(ctx, client, url, method, in)
 	if err != nil {
 		return nil, err

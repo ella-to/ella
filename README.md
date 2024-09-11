@@ -1,7 +1,10 @@
 ```
-┌─┐┬  ┬  ┌─┐
-├┤ │  │  ├─┤
-└─┘┴─┘┴─┘┴ ┴ v0.0.2
+███████╗██╗░░░░░██╗░░░░░░█████╗░
+██╔════╝██║░░░░░██║░░░░░██╔══██╗
+█████╗░░██║░░░░░██║░░░░░███████║
+██╔══╝░░██║░░░░░██║░░░░░██╔══██║
+███████╗███████╗███████╗██║░░██║
+╚══════╝╚══════╝╚══════╝╚═╝░░╚═╝ v0.0.4
 ```
 
 Ella, is yet another compiler to produce Go and Typescript code based on simple and easy-to-read schema IDL. There are many tools like gRPC, Twirp or event WebRPC to generate codes, but this little compiler is designed based on my views of 10+ years of developing backend and APIs. I wanted to simplify the tooling and produce almost perfect optimized, handcrafted code that can be read and understood, not like the output of gRPC.
@@ -39,9 +42,12 @@ ella fmt ./schema/*.ella
 The full CLI documentation can be accessed by running Ella command without any arguments
 
 ```
-┌─┐┬  ┬  ┌─┐
-├┤ │  │  ├─┤
-└─┘┴─┘┴─┘┴ ┴ v0.0.2
+███████╗██╗░░░░░██╗░░░░░░█████╗░
+██╔════╝██║░░░░░██║░░░░░██╔══██╗
+█████╗░░██║░░░░░██║░░░░░███████║
+██╔══╝░░██║░░░░░██║░░░░░██╔══██║
+███████╗███████╗███████╗██║░░██║
+╚══════╝╚══════╝╚══════╝╚═╝░░╚═╝ v0.0.4
 
 Usage: ella [command]
 
@@ -227,10 +233,10 @@ is the same as `Json`. Currently, this is the only option available for `Yaml`.
 model User {
   Firstname: string {
     Yaml = "firstName"
-  }
+  }`
 }
 
-model User {
+model User {`
   Username: string
   Password: string {
     Yaml = false
