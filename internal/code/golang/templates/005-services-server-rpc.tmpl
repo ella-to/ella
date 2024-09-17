@@ -13,8 +13,8 @@ const (
 )
 
 {{- range $service := .RpcServices }}
-func StartRpc{{ $service.Name }}Server(service Rpc{{ $service.Name }}, adaptor rpcAdaptor) (drain func (), err error) {
-    ctx, cancel := context.WithCancel(context.Background())
+func StartRpc{{ $service.Name }}Server(ctx context.Context, service Rpc{{ $service.Name }}, adaptor rpcAdaptor) (drain func (), err error) {
+    ctx, cancel := context.WithCancel(ctx)
 
     drain = func() {
         cancel()
