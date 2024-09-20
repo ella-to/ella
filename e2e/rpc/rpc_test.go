@@ -10,7 +10,9 @@ import (
 func TestRpcCall(t *testing.T) {
 	adapter := NewMemory()
 
-	done, err := StartRpcGreetingServiceServer(&RpcGreetingServiceImpl{}, adapter)
+	ctx := context.Background()
+
+	done, err := StartRpcGreetingServiceServer(ctx, &RpcGreetingServiceImpl{}, adapter)
 	assert.NoError(t, err)
 	defer done()
 

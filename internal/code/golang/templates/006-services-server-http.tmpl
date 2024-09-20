@@ -31,17 +31,19 @@ var _ http.Handler = (*{{ $service.NameImpl }})(nil)
 func (s *{{ $service.NameImpl }}) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	var handler httpServiceMethodHandler
 
+	ctx := r.Context()
+
 	switch r.URL.Path {
 	{{- range $i, $method := $service.Methods }}
 	case {{ $method.PathName }}:
 		handler = s.route{{ $i }}
 	{{- end }}
 	default:
-		httpResponseError(w, ErrServiceMethodNotFound.WithMsg("method %q not found", r.URL.Path))
+		httpResponseError(ctx, w, ErrServiceMethodNotFound.WithMsg("method %q not found", r.URL.Path))
 		return
 	}
 
-	ctx := injectCommonVars(r.Context(), w, r)
+	ctx = injectCommonVars(ctx, w, r)
 
 	handler(ctx, w, r)
 }

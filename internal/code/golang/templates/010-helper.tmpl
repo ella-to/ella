@@ -98,7 +98,7 @@ type httpServiceMethodHandler func(context.Context, http.ResponseWriter, *http.R
 func createServiceMethodHandler[ReqMsg, RespMsg any](method string, hasFields bool, fn func(ctx context.Context, req *ReqMsg) (*RespMsg, error)) httpServiceMethodHandler {
 	return func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		if r.Method != method {
-			httpResponseError(w, ErrMethodNotAllowed.WithMsg("method %q not allowed", r.Method))
+			httpResponseError(ctx, w, ErrMethodNotAllowed.WithMsg("method %q not allowed", r.Method))
 			return
 		}
 
@@ -131,7 +131,7 @@ func createServiceMethodHandler[ReqMsg, RespMsg any](method string, hasFields bo
 
 		respMsg, err := fn(ctx, &reqMsg)
 		if err != nil {
-			httpResponseError(w, err)
+			httpResponseError(ctx, w, err)
 			return
 		}
 
@@ -148,13 +148,13 @@ type streamEvent struct {
 func createStreamServiceMethod[ReqMsg any](method string, hasFields bool, fn func(ctx context.Context, req *ReqMsg) (<-chan *streamEvent, error)) httpServiceMethodHandler {
 	return func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		if r.Method != method {
-			httpResponseError(w, ErrMethodNotAllowed.WithMsg("method %q not allowed", r.Method))
+			httpResponseError(ctx, w, ErrMethodNotAllowed.WithMsg("method %q not allowed", r.Method))
 			return
 		}
 
 		fluser, ok := w.(http.Flusher)
 		if !ok {
-			httpResponseError(w, ErrFlusherNotSupported)
+			httpResponseError(ctx, w, ErrFlusherNotSupported)
 			return
 		}
 
@@ -190,7 +190,7 @@ func createStreamServiceMethod[ReqMsg any](method string, hasFields bool, fn fun
 
 		events, err := fn(ctx, &reqMsg)
 		if err != nil {
-			httpResponseError(w, err)
+			httpResponseError(ctx, w, err)
 			return
 		}
 
@@ -229,7 +229,7 @@ func createStreamServiceMethod[ReqMsg any](method string, hasFields bool, fn fun
 func createStreamBinaryServiceMethod[ReqMsg any](method string, hasFields bool, fn func(ctx context.Context, req *ReqMsg) (io.Reader, string, string, error)) httpServiceMethodHandler {
 	return func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		if r.Method != method {
-			httpResponseError(w, ErrMethodNotAllowed.WithMsg("method %q not allowed", r.Method))
+			httpResponseError(ctx, w, ErrMethodNotAllowed.WithMsg("method %q not allowed", r.Method))
 			return
 		}
 
@@ -265,7 +265,7 @@ func createStreamBinaryServiceMethod[ReqMsg any](method string, hasFields bool, 
 
 		streamReader, filename, contentType, err := fn(ctx, &reqMsg)
 		if err != nil {
-			httpResponseError(w, err)
+			httpResponseError(ctx, w, err)
 			return
 		}
 		if closer, ok := streamReader.(io.Closer); ok {
@@ -291,7 +291,7 @@ func createServiceMethodUploadHandler[ReqMsg, RespMsg any](
 ) httpServiceMethodHandler {
 	return func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {
-			httpResponseError(w, ErrMethodNotAllowed.WithMsg("method %q not allowed", r.Method))
+			httpResponseError(ctx, w, ErrMethodNotAllowed.WithMsg("method %q not allowed", r.Method))
 			return
 		}
 
@@ -299,19 +299,19 @@ func createServiceMethodUploadHandler[ReqMsg, RespMsg any](
 
 		reader, err := r.MultipartReader()
 		if err != nil {
-			httpResponseError(w, err)
+			httpResponseError(ctx, w, err)
 			return
 		}
 
 		part, err := reader.NextPart()
 		if err != nil {
-			httpResponseError(w, err)
+			httpResponseError(ctx, w, err)
 			return
 		}
 
 		if part.FormName() != "payload" {
 			part.Close()
-			httpResponseError(w, ErrMissingPayloadName)
+			httpResponseError(ctx, w, ErrMissingPayloadName)
 			return
 		}
 
@@ -319,7 +319,7 @@ func createServiceMethodUploadHandler[ReqMsg, RespMsg any](
 		err = json.NewDecoder(part).Decode(&req)
 		part.Close()
 		if err != nil {
-			httpResponseError(w, err)
+			httpResponseError(ctx, w, err)
 			return
 		}
 
@@ -338,7 +338,7 @@ func createServiceMethodUploadHandler[ReqMsg, RespMsg any](
 
 		resp, err := fn(ctx, nextFile, &req)
 		if err != nil {
-			httpResponseError(w, err)
+			httpResponseError(ctx, w, err)
 			return
 		}
 
@@ -960,17 +960,17 @@ func newError(code int, httpStatus int, cause error, msg string, args ...any) Er
 // if the error is of type *Error, it will write the error code and message
 // and if code is valid http status code, it will write the http status code
 // otherwise it will write 500
-func httpResponseError(w http.ResponseWriter, err error) {
+func httpResponseError(ctx context.Context, w http.ResponseWriter, err error) {
 	switch err := err.(type) {
 	case Error:
 		if err.HTTPStatus < 100 || err.HTTPStatus > 599 {
 			httpResponse(w, http.StatusInternalServerError, err)
 			return
 		}
-		slog.Error("http response error", "http_status", err.HTTPStatus, "code", err.Code, "message", err.Message, "cause", err.cause)
+		slog.ErrorContext(ctx, "http response error", "http_status", err.HTTPStatus, "code", err.Code, "message", err.Message, "cause", err.cause)
 		httpResponse(w, err.HTTPStatus, err)
 	default:
-		httpResponseError(w, newError(0, http.StatusInternalServerError, err, "internal server error"))
+		httpResponseError(ctx, w, newError(0, http.StatusInternalServerError, err, "internal server error"))
 	}
 }
 
