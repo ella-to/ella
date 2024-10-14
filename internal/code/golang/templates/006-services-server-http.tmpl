@@ -138,10 +138,17 @@ func (s *{{ $service.NameImpl }}) create{{ $method.Name }}() httpServiceMethodHa
 		ret = &struct {
 			{{ $method.ReturnsStructDefinitions }}
 		}{}
+		{{- if $method.Options.RawControl }}
+		s.service.{{ $method.Name }}(
+			ctx, 
+			{{ $method.ArgsNames "args." }}
+		)
+		{{- else }}
 		{{ $method.ReturnsNames "ret." }} err = s.service.{{ $method.Name }}(
 			ctx, 
 			{{ $method.ArgsNames "args." }}
 		)
+		{{- end }}
 		return
 	})
 {{- end }}
