@@ -14,7 +14,7 @@ import (
 	"ella.to/ella/internal/validator"
 )
 
-const Version = "0.0.6"
+const Version = "v0.0.6"
 
 const usage = `
 ███████╗██╗░░░░░██╗░░░░░░█████╗░
