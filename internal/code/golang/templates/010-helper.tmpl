@@ -95,7 +95,7 @@ type httpClientDoer interface {
 
 type httpServiceMethodHandler func(context.Context, http.ResponseWriter, *http.Request)
 
-func createServiceMethodHandler[ReqMsg, RespMsg any](method string, hasFields bool, fn func(ctx context.Context, req *ReqMsg) (*RespMsg, error)) httpServiceMethodHandler {
+func createServiceMethodHandler[ReqMsg, RespMsg any](method string, hasFields bool, rawControl bool, fn func(ctx context.Context, req *ReqMsg) (*RespMsg, error)) httpServiceMethodHandler {
 	return func(ctx context.Context, w http.ResponseWriter, r *http.Request) {
 		if r.Method != method {
 			httpResponseError(ctx, w, ErrMethodNotAllowed.WithMsg("method %q not allowed", r.Method))
@@ -127,6 +127,11 @@ func createServiceMethodHandler[ReqMsg, RespMsg any](method string, hasFields bo
 				w.WriteHeader(http.StatusBadRequest)
 				return
 			}
+		}
+
+		if rawControl {
+			fn(ctx, &reqMsg)
+			return
 		}
 
 		respMsg, err := fn(ctx, &reqMsg)

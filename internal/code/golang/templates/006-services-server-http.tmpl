@@ -130,7 +130,7 @@ func (s *{{ $service.NameImpl }}) create{{ $method.Name }}() httpServiceMethodHa
 		},
 	)
 {{- else }}
-	return createServiceMethodHandler("{{ $method.Options.HttpMethod }}", {{ $method.HasArgs }}, func(ctx context.Context, args *struct {
+	return createServiceMethodHandler("{{ $method.Options.HttpMethod }}", {{ $method.HasArgs }}, {{ $method.Options.RawControl }}, func(ctx context.Context, args *struct {
 		{{ $method.ArgsStructDefinitions true }}
 	}) (ret *struct {
 		{{ $method.ReturnsStructDefinitions }}
