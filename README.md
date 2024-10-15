@@ -4,7 +4,7 @@
 █████╗░░██║░░░░░██║░░░░░███████║
 ██╔══╝░░██║░░░░░██║░░░░░██╔══██║
 ███████╗███████╗███████╗██║░░██║
-╚══════╝╚══════╝╚══════╝╚═╝░░╚═╝ v0.0.4
+╚══════╝╚══════╝╚══════╝╚═╝░░╚═╝ v0.0.7
 ```
 
 Ella, is yet another compiler to produce Go and Typescript code based on simple and easy-to-read schema IDL. There are many tools like gRPC, Twirp or event WebRPC to generate codes, but this little compiler is designed based on my views of 10+ years of developing backend and APIs. I wanted to simplify the tooling and produce almost perfect optimized, handcrafted code that can be read and understood, not like the output of gRPC.
@@ -20,7 +20,7 @@ Ella's schema went through several iterations to make it easier for extension an
 to install Ella's compiler, simply use the go install command
 
 ```bash
-go install compiler.ella.to@latest
+go install ella.to/ella@latest
 ```
 
 # Usage
@@ -47,7 +47,7 @@ The full CLI documentation can be accessed by running Ella command without any a
 █████╗░░██║░░░░░██║░░░░░███████║
 ██╔══╝░░██║░░░░░██║░░░░░██╔══██║
 ███████╗███████╗███████╗██║░░██║
-╚══════╝╚══════╝╚══════╝╚═╝░░╚═╝ v0.0.4
+╚══════╝╚══════╝╚══════╝╚═╝░░╚═╝ v0.0.7
 
 Usage: ella [command]
 
