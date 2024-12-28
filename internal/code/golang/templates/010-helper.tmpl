@@ -917,34 +917,34 @@ func decodeRpcError(b []byte) (Error, bool) {
 
 	switch len(segments) {
 	case 1: // normal error
-		return ErrInternal.WithMsg(string(segments[0])), true
+		return ErrInternal.WithMsg("%s", string(segments[0])), true
 	case 3: // error with http status
 		code, err := strconv.ParseInt(string(segments[0]), 10, 64)
 		if err != nil {
-			return ErrInternal.WithMsg(string(b)), true
+			return ErrInternal.WithMsg("%s", string(b)), true
 		}
 
 		httpStatus, err := strconv.ParseInt(string(segments[2]), 10, 64)
 		if err != nil {
-			return ErrInternal.WithMsg(string(b)), true
+			return ErrInternal.WithMsg("%s", string(b)), true
 		}
 
-		return newError(int(code), int(httpStatus), nil, string(segments[1])), true
+		return newError(int(code), int(httpStatus), nil, "%s", string(segments[1])), true
 
 	case 4: // error with cause
 		code, err := strconv.ParseInt(string(segments[0]), 10, 64)
 		if err != nil {
-			return ErrInternal.WithMsg(string(b)), true
+			return ErrInternal.WithMsg("%s", string(b)), true
 		}
 
 		httpStatus, err := strconv.ParseInt(string(segments[2]), 10, 64)
 		if err != nil {
-			return ErrInternal.WithMsg(string(b)), true
+			return ErrInternal.WithMsg("%s", string(b)), true
 		}
 
 		return newError(int(code), int(httpStatus), nil, string(segments[1]), errors.New(string(segments[3]))), true
 	default:
-		return ErrInternal.WithMsg(string(b)), true
+		return ErrInternal.WithMsg("%s", string(b)), true
 	}
 }
 
