@@ -1,0 +1,16 @@
+{{- define "errors" }}
+//
+// Custom Errors
+//
+
+export enum ErrorCode {
+{{- range $err := .Errors }}
+    {{ $err.Name }} = {{ $err.Code }},
+{{- end }}
+}
+
+export function ErrorIs(err: any, errCode: ErrorCode): boolean {
+  return (err instanceof ResponseError) && err.code === errCode
+}
+
+{{- end }}

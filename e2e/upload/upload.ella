@@ -4,5 +4,5 @@ model File {
 }
 
 service StorageService {
-   http UploadFiles(files: file, id: string) => (results: []File)
+   http UploadFiles(id: string, files: file) => (results: []File)
 }

@@ -37,14 +37,14 @@ func TestUpload(t *testing.T) {
 	}
 	close(files)
 
-	results, err := client.UploadFiles(context.Background(), func() (string, io.Reader, error) {
+	results, err := client.UploadFiles(context.Background(), "test", func() (string, io.Reader, error) {
 		file, ok := <-files
 		if !ok {
 			return "", nil, io.EOF
 		}
 
 		return file.FileName, file.Content, nil
-	}, "test")
+	})
 	assert.NoError(t, err)
 	assert.Equal(t, []*File{
 		{

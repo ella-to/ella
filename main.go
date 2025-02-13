@@ -5,16 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-
-	"ella.to/ella/internal/ast"
-	"ella.to/ella/internal/code"
-	"ella.to/ella/internal/code/golang"
-	"ella.to/ella/internal/code/typescript"
-	"ella.to/ella/internal/parser"
-	"ella.to/ella/internal/validator"
 )
 
-const Version = "0.0.7"
+const Version = "0.1.0"
 
 const usage = `
 ███████╗██╗░░░░░██╗░░░░░░█████╗░
@@ -37,9 +30,9 @@ Commands:
   - ver Print the version of ella
 
 example:
-  ella fmt ./path/to/*.ella
-  ella gen rpc ./path/to/output.go ./path/to/*.ella
-  ella gen rpc ./path/to/output.ts ./path/to/*.ella ./path/to/other/*.ella
+  ella fmt "./path/to/*.ella"
+  ella gen rpc ./path/to/output.go "./path/to/*.ella"
+  ella gen rpc ./path/to/output.ts "./path/to/*.ella" "./path/to/other/*.ella"
 `
 
 func main() {
@@ -83,12 +76,15 @@ func format(path string) error {
 	}
 
 	for _, filename := range filenames {
-		prog, err := parse(filename)
+		doc, err := ParseDocument(NewParserWithFilenames(filename))
 		if err != nil {
 			return err
 		}
 
-		err = os.WriteFile(filename, []byte(prog.String()), os.ModePerm)
+		var sb strings.Builder
+		doc.Format(&sb)
+
+		err = os.WriteFile(filename, []byte(sb.String()), os.ModePerm)
 		if err != nil {
 			return err
 		}
@@ -98,109 +94,27 @@ func format(path string) error {
 }
 
 func gen(pkg, out string, searchPaths ...string) (err error) {
-	var code code.Generator
+	var docs []*Document
 
-	defer func() {
+	for _, searchPath := range searchPaths {
+		filenames, err := filepath.Glob(searchPath)
 		if err != nil {
-			//os.Remove(out)
-		}
-	}()
-
-	filenames, err := mergeAllFiles(searchPaths...)
-	if err != nil {
-		return err
-	}
-
-	if len(filenames) == 0 {
-		return fmt.Errorf("no ella's files found in the following paths: %s", strings.Join(searchPaths, ", "))
-	}
-
-	content, err := combine(filenames...)
-	if err != nil {
-		return err
-	}
-
-	prog, err := parser.ParseProgram(parser.New(content))
-	if err != nil {
-		return err
-	}
-
-	err = validator.Validate(prog)
-	if err != nil {
-		return err
-	}
-
-	ext := filepath.Ext(out)
-	switch ext {
-	case ".go":
-		code = golang.New(pkg)
-	case ".ts":
-		code = typescript.New()
-	default:
-		return fmt.Errorf("unknown extension %s", out)
-	}
-
-	if err = code.Generate(out, prog); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func parse(filename string) (*ast.Program, error) {
-	content, err := os.ReadFile(filename)
-	if err != nil {
-		return nil, err
-	}
-
-	return parser.ParseProgram(
-		parser.New(string(content)),
-	)
-}
-
-func mergeAllFiles(paths ...string) ([]string, error) {
-	filenamesMap := make(map[string]struct{})
-
-	for _, path := range paths {
-		filenames, err := filepath.Glob(path)
-		if err != nil {
-			return nil, err
+			return err
 		}
 
 		for _, filename := range filenames {
-			filenamesMap[filename] = struct{}{}
+			doc, err := ParseDocument(NewParserWithFilenames(filename))
+			if err != nil {
+				return err
+			}
+
+			docs = append(docs, doc)
 		}
 	}
 
-	filenames := make([]string, 0, len(filenamesMap))
-	for filename := range filenamesMap {
-		filenames = append(filenames, filename)
+	if err = Validate(docs...); err != nil {
+		return err
 	}
 
-	return filenames, nil
-}
-
-// combine is a helper function to concatenate multiple files into a single string
-// and returns an error if any of the files have an invalid extension or file cannot
-// be read.
-func combine(filenames ...string) (string, error) {
-	var sb strings.Builder
-
-	for i, filename := range filenames {
-		if !strings.HasSuffix(filename, ".ella") {
-			return "", fmt.Errorf("invalid file extension %s", filename)
-		}
-
-		content, err := os.ReadFile(filename)
-		if err != nil {
-			return "", err
-		}
-
-		if i != 0 {
-			sb.WriteString("\n")
-		}
-		sb.Write(content)
-	}
-
-	return sb.String(), nil
+	return Generate(pkg, out, docs)
 }

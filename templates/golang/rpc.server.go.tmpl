@@ -1,0 +1,55 @@
+{{- define "rpc.server" -}}
+//
+// RPC Service Servers
+//
+
+const (
+{{- range $service := .RpcServices }}
+	{{ $service | ToRpcServiceTopicName }} = "{{ $service | ToRpcServiceTopicValue }}"
+{{- range $method := $service.Methods }}
+    {{ $method | ToRpcServiceMethodTopicName }} = "{{ $method | ToRpcServiceMethodTopicValue }}"
+{{- end }}    
+{{- end }}
+)
+
+{{ range $service := .RpcServices }}
+func StartRpc{{ $service.Name }}Server(ctx context.Context, service Rpc{{ $service.Name }}, adaptor rpcAdaptor) (drain func (), err error) {
+    ctx, cancel := context.WithCancel(ctx)
+
+    drain = func() {
+        cancel()
+    }
+    {{ range $method := $service.Methods }}
+    err = adaptor.Reply(ctx, {{ $method | ToRpcServiceMethodTopicName }}, func(ctx context.Context, data json.RawMessage) (any, error) {
+		type Input struct {
+{{ $method.Args | ToArgsDefinition 3 }}
+		}
+
+		type Output struct {
+{{ $method.Returns | ToReturnsDefinition 3 }}
+		}
+
+		input := Input{}
+		output := Output{}
+
+        err := json.Unmarshal(data, &input)
+        if err != nil {
+            return nil, err
+        }
+
+		{{ $method.Returns | ToReturnsAccess "output." }} = service.{{ $method.Name }}({{ $method.Args | ToArgsAccess "input." }})
+        if err != nil {
+            return nil, err
+        }
+
+        return output, nil
+    })
+    if err != nil {
+        return
+    }
+    {{ end }}
+
+	return
+}
+{{- end }}
+{{- end }}

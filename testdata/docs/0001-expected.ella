@@ -1,0 +1,33 @@
+# Hello world
+const A = 1
+const B = 2
+
+enum C {
+    # Hello World
+    D = 1
+    E
+    # Nice to see you
+}
+
+# 
+# Wow this is great
+enum F {
+
+}
+
+model User {
+    ...Base
+    A: int64 {
+        # This is a comment
+    }
+    B: string {
+        # Cool
+        Encoding = "base64"
+    }
+}
+
+# hello service
+service UserService {
+    # this is another comment
+    rpc GetById (id: string) => (result: User)
+}

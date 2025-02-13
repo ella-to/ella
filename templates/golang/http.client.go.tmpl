@@ -1,0 +1,152 @@
+{{- define "http.client" }}
+//
+// HTTP Service Clients
+//
+
+{{- range $service := .HttpServices }}
+
+type http{{ $service.Name }}Client struct {
+	client httpClientDoer
+	host   string
+}
+
+var _ Http{{ $service.Name }} = (*http{{ $service.Name }}Client)(nil)
+
+func CreateHttp{{ $service.Name }}Client(host string, client httpClientDoer) Http{{ $service.Name }} {
+	return &http{{ $service.Name }}Client{
+		host:   host,
+		client: client,
+	}
+}
+
+{{- range $method := $service.Methods }}
+{{- if $method.HttpRawControl }}
+
+// Raw control for {{ $method.Name }}
+func (s *http{{ $service.Name }}Client) {{ $method.Name }}(ctx context.Context, w http.ResponseWriter, r *http.Request) {
+	url, err := createURLWithPaths(s.host, {{ $method | ToMethodPathName  }})
+	if err != nil {
+		return
+	}
+	r.URL = url
+
+	// Create a new request
+    req, err := http.NewRequestWithContext(ctx, "{{ $method.HttpMethod }}", url.String(), nil)
+    if err != nil {
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
+    
+    // Make the HTTP call
+    resp, err := s.client.Do(req)
+    if err != nil {
+        http.Error(w, err.Error(), http.StatusInternalServerError)
+        return
+    }
+    defer resp.Body.Close()
+    
+    // Copy headers from the response to our ResponseWriter
+    for key, values := range resp.Header {
+        for _, value := range values {
+            w.Header().Add(key, value)
+        }
+    }
+    
+    // Set the status code
+    w.WriteHeader(resp.StatusCode)
+    
+    // Copy the response body to the ResponseWriter
+    if _, err := io.Copy(w, resp.Body); err != nil {
+        // Note: We can't write an error response here as we've already written the header
+        slog.ErrorContext(ctx, "Error copying response", "err", err)
+    }
+}
+{{- else if and $method.IsBinary $method.IsStream }}
+
+// Binary Stream for {{ $method.Name }}
+func (s *http{{ $service.Name }}Client) {{ $method.Name }}({{ $method.Args | ToMethodArgs }}) (r io.Reader, filename string, contentType string, err error) {
+	url, err := createURLWithPaths(s.host, {{ $method | ToMethodPathName  }})
+	if err != nil {
+		return
+	}
+
+	type Input struct {
+{{ $method.Args | ToArgsDefinition 2 }}		
+	}
+
+	input := &Input{ {{ $method.Args | ArgsList }} }
+
+	return callHttpBinaryStreamEndpoint(ctx, s.client, url.String(), "{{ $method.HttpMethod }}", {{ $method.HasArgs }}, input)
+}
+{{- else if $method.IsStream }}
+
+// Stream for {{ $method.Name }}
+func (s *http{{ $service.Name }}Client) {{ $method.Name }}({{ $method.Args | ToMethodArgs }}) ({{ $method.Returns | ToMethodReturns }}) {
+	url, err := createURLWithPaths(s.host, {{ $method | ToMethodPathName  }})
+	if err != nil {
+		return
+	}
+
+	type Input struct {
+{{ $method.Args | ToArgsDefinition 2 }}		
+	}
+
+	input := &Input{ {{ $method.Args | ArgsList }} }
+
+	{{- $typ := StreamType $method.Returns }}
+	{{- $isPtr := IsPointerType $typ }}
+
+	return callHttpStreamEndpoint[{{ $typ }}](ctx, s.client, url.String(), "{{ $method.HttpMethod }}", {{ $method.HasArgs }}, input, {{ $isPtr }})
+}
+{{- else if $method.IsUpload }}
+
+// Upload for {{ $method.Name }}
+func (s *http{{ $service.Name }}Client) {{ $method.Name }}({{ $method.Args | ToMethodArgs }}) ({{ $method.Returns | ToMethodReturns }}) {
+	url, err := createURLWithPaths(s.host, {{ $method | ToMethodPathName  }})
+	if err != nil {
+		return
+	}
+
+	type Input struct {
+{{ $method.Args | ToArgsDefinition 2 }}		
+	}
+
+	type Output struct {
+{{ $method.Returns | ToReturnsDefinition 2 }}		
+	}	
+
+	input := &Input{ {{ $method.Args | ArgsList }} }
+	output := &Output{}
+
+	err = callHttpFilesUpload(ctx, s.client, url.String(), "{{ $method.HttpMethod }}", input, {{ $method.Args | GetArgFileUploadName }}, output)
+	return {{ $method.Returns | ToReturnsAccess "output." }}
+}
+{{- else }}
+
+// {{ $method.Name }} for {{ $service.Name }}
+func (s *http{{ $service.Name }}Client) {{ $method.Name }}({{ $method.Args | ToMethodArgs }}) ({{ $method.Returns | ToMethodReturns }}) {
+	url, err := createURLWithPaths(s.host, {{ $method | ToMethodPathName  }})
+	if err != nil {
+		return
+	}
+
+	type Input struct {
+{{ $method.Args | ToArgsDefinition 2 }}		
+	}
+
+	type Output struct {
+{{ $method.Returns | ToReturnsDefinition 2 }}		
+	}
+
+	input := &Input{ {{ $method.Args | ArgsList }} }
+	output := &Output{}
+
+	err = callHttpServiceMethod(ctx, s.client, url.String(), "{{ $method.HttpMethod }}", {{ $method.HasArgs }}, {{ $method.HasReturns }}, input, output)
+
+	return {{ $method.Returns | ToReturnsAccess "output." }}
+}
+{{- end }}
+
+{{- end }}
+{{- end }}
+{{- end }}
