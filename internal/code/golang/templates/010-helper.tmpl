@@ -207,23 +207,41 @@ func createStreamServiceMethod[ReqMsg any](method string, hasFields bool, fn fun
 		var buffer bytes.Buffer
 
 		var lastID int64
-		for item := range events {
-			buffer.Reset()
+		var stop bool
 
-			buffer.WriteString("id: ")
-			buffer.WriteString(strconv.FormatInt(item.id, 10))
-			buffer.WriteString("\nevent: ")
-			buffer.WriteString(item.event)
-			buffer.WriteString("\ndata: ")
-			buffer.WriteString(item.data)
-			buffer.WriteString("\n\n")
+		for !stop {
+			select {
+			case <-ctx.Done():
+				stop = true
+				break
 
-			_, err := io.Copy(w, &buffer)
-			if err != nil {
-				return
+			case item, ok := <-events:
+				if !ok {
+					stop = true
+					break
+				}
+
+				buffer.Reset()
+
+				buffer.WriteString("id: ")
+				buffer.WriteString(strconv.FormatInt(item.id, 10))
+				buffer.WriteString("\nevent: ")
+				buffer.WriteString(item.event)
+				buffer.WriteString("\ndata: ")
+				buffer.WriteString(item.data)
+				buffer.WriteString("\n\n")
+
+				_, err := io.Copy(w, &buffer)
+				if err != nil {
+					return
+				}
+				fluser.Flush()
+				lastID = item.id			
 			}
-			fluser.Flush()
-			lastID = item.id
+
+			if stop {
+				break
+			}
 		}
 
 		lastID++
