@@ -95,6 +95,7 @@ const (
 	TokConstNull                                 // null
 	TokReturn                                    // =>
 	TokAssign                                    // =
+	TokOptional                                  // ?
 	TokColon                                     // :
 	TokComma                                     // ,
 	TokExtend                                    // ...

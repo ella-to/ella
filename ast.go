@@ -705,10 +705,11 @@ func (o *Options) AddComments(comments ...*Comment) {
 //
 
 type Field struct {
-	Name     *Identifier
-	Type     Type
-	Options  *Options
-	Comments []*Comment
+	Name       *Identifier
+	Type       Type
+	IsOptional bool
+	Options    *Options
+	Comments   []*Comment
 }
 
 var _ (Expr) = (*Field)(nil)
@@ -728,6 +729,9 @@ func (f *Field) Format(sb *strings.Builder) {
 
 	sb.WriteString("    ")
 	f.Name.Format(sb)
+	if f.IsOptional {
+		sb.WriteString("?")
+	}
 	sb.WriteString(": ")
 	f.Type.Format(sb)
 

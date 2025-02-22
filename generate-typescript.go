@@ -44,8 +44,9 @@ func generateTypescript(pkg, output string, doc *Document) error {
 	// MODELS
 
 	type TsField struct {
-		Name string
-		Type string
+		Name       string
+		Type       string
+		IsOptional bool
 	}
 
 	type TsModel struct {
@@ -138,8 +139,9 @@ func generateTypescript(pkg, output string, doc *Document) error {
 					}
 
 					return TsField{
-						Name: name,
-						Type: getTypescriptType(field.Type),
+						Name:       name,
+						Type:       getTypescriptType(field.Type),
+						IsOptional: field.IsOptional,
 					}
 				}), func(field TsField) bool {
 					return field.Name != ""

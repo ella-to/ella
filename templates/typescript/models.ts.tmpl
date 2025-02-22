@@ -5,7 +5,7 @@
 {{ range $model := .Models }}
 export interface {{ $model.Name }} {
 	{{- range $field := $model.Fields }}
-	{{ $field.Name | ToCamelCase }}: {{ $field.Type }};
+	{{ $field.Name | ToCamelCase }}{{ if $field.IsOptional }}?{{ end }}: {{ $field.Type }};
 	{{- end }}
 }
 {{ end }}

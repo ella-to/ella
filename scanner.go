@@ -9,6 +9,10 @@ func Lex(l *Lexer) State {
 	case 0:
 		l.Emit(TokEOF)
 		return nil
+	case '?':
+		l.Next()
+		l.Emit(TokOptional)
+		return Lex
 	case '=':
 		l.Next()
 		if l.Peek() == '>' {

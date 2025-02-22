@@ -8,30 +8,11 @@ import (
 	"ella.to/ella/internal/strcase"
 )
 
-type stack[T any] struct {
-	data []T
-}
-
-func (s *stack[T]) Push(v T) {
-	s.data = append(s.data, v)
-}
-
-func (s *stack[T]) Pop() (v T, ok bool) {
-	if len(s.data) == 0 {
-		return v, false
-	}
-
-	v = s.data[len(s.data)-1]
-	s.data = s.data[:len(s.data)-1]
-	return v, true
-}
-
 type Parser struct {
-	tokens    TokenIterator
-	nextTok   *Token
-	currTok   *Token
-	exprStack stack[Expr]
-	comments  []*Comment
+	tokens   TokenIterator
+	nextTok  *Token
+	currTok  *Token
+	comments []*Comment
 }
 
 func (p *Parser) Current() *Token {
@@ -61,8 +42,7 @@ func NewParser(input string) *Parser {
 	tokenEmitter := NewEmitterIterator()
 	go Start(tokenEmitter, Lex, input)
 	return &Parser{
-		tokens:    tokenEmitter,
-		exprStack: stack[Expr]{data: make([]Expr, 0)},
+		tokens: tokenEmitter,
 	}
 }
 
@@ -70,8 +50,7 @@ func NewParserWithFilenames(filenames ...string) *Parser {
 	tokenEmitter := NewEmitterIterator()
 	go StartWithFilenames(tokenEmitter, Lex, filenames...)
 	return &Parser{
-		tokens:    tokenEmitter,
-		exprStack: stack[Expr]{data: make([]Expr, 0)},
+		tokens: tokenEmitter,
 	}
 }
 
@@ -124,8 +103,6 @@ func ParseEnum(p *Parser) (enum *Enum, err error) {
 	}
 
 	enum = &Enum{Token: p.Next()}
-
-	p.exprStack.Push(enum)
 
 	if p.Peek().Type != TokIdentifier {
 		return nil, NewError(p.Peek(), "expected identifier for defining an enum")
@@ -472,11 +449,24 @@ func ParseModelField(p *Parser) (field *Field, err error) {
 		Comments: make([]*Comment, 0),
 	}
 
-	if p.Peek().Type != TokColon {
-		return nil, NewError(p.Peek(), "expected ':' after message field name")
-	}
+	peek := p.Peek()
 
-	p.Next() // skip ':'
+	switch peek.Type {
+	case TokOptional:
+		field.IsOptional = true
+		p.Next() // skip '?'
+
+		if p.Peek().Type != TokColon {
+			return nil, NewError(p.Peek(), "expected ':' after '?'")
+		}
+		p.Next() // skip ':'
+
+	case TokColon:
+		field.IsOptional = false
+		p.Next() // skip ':'
+	default:
+		return nil, NewError(peek, "expected ':' or '?' after message field name")
+	}
 
 	field.Type, err = ParseType(p)
 	if err != nil {
@@ -503,7 +493,9 @@ func ParseModelField(p *Parser) (field *Field, err error) {
 // Parse Type
 
 func ParseType(p *Parser) (Type, error) {
-	switch p.Peek().Type {
+	peek := p.Peek()
+
+	switch peek.Type {
 	case TokMap:
 		return ParseMapType(p)
 	case TokArray:
@@ -547,7 +539,7 @@ func ParseType(p *Parser) (Type, error) {
 
 		return &CustomType{Token: nameTok}, nil
 	default:
-		return nil, NewError(p.Peek(), "expected type")
+		return nil, NewError(peek, "expected type")
 	}
 }
 

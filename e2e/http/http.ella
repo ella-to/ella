@@ -11,7 +11,7 @@ enum Emotion {
 
 model Person {
     Name: string
-    Age: int8
+    Age?: int8
     Emotion: Emotion
 }
 

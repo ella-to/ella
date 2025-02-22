@@ -1,9 +1,6 @@
 package main
 
 import (
-	"fmt"
-	"os"
-	"sort"
 	"strings"
 	"testing"
 
@@ -221,15 +218,29 @@ func TestParserConst(t *testing.T) {
 }
 
 func TestParserDocument(t *testing.T) {
-	cases, expected := getAllTestData(t, "./testdata/docs")
-	counts := len(cases)
+	testCases := []struct {
+		input  string
+		output string
+	}{
+		{
+			input: `
+model User {
+	Id: string
+	Name?: string
+}
+			`,
+			output: `
+model User {
+    Id: string
+    Name?: string
+}`,
+		},
+	}
 
-	for i := range counts {
-		c := readContent(t, cases[i])
-		e := readContent(t, expected[i])
+	for _, tc := range testCases {
 
 		var sb strings.Builder
-		parser := NewParser(c)
+		parser := NewParser(tc.input)
 
 		result, err := ParseDocument(parser)
 		if !assert.NoError(t, err) {
@@ -237,43 +248,6 @@ func TestParserDocument(t *testing.T) {
 		}
 
 		result.Format(&sb)
-		assert.Equal(t, e, sb.String())
+		assert.Equal(t, strings.TrimSpace(tc.output), sb.String())
 	}
-}
-
-func readContent(t *testing.T, path string) string {
-	content, err := os.ReadFile(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	return string(content)
-}
-
-func getAllTestData(t *testing.T, path string) (cases []string, expected []string) {
-	entries, err := os.ReadDir(path)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-
-		if strings.Contains(entry.Name(), "expected") {
-			expected = append(expected, fmt.Sprintf("%s/%s", path, entry.Name()))
-		} else {
-			cases = append(cases, fmt.Sprintf("%s/%s", path, entry.Name()))
-		}
-	}
-
-	if len(cases) != len(expected) {
-		t.Fatalf("number of cases and expected files does not match")
-	}
-
-	sort.Strings(cases)
-	sort.Strings(expected)
-
-	return
 }

@@ -638,14 +638,21 @@ func getGolangModelFieldTag(field *Field) string {
 		}
 	}
 
-	jsonOmitEmptyValue, ok := mapper["jsonomitempty"]
-	if ok && jsonTagValue != "-" {
+	jsonOmitEmptyValue, isJsonOmitEmpty := mapper["jsonomitempty"]
+	if isJsonOmitEmpty && jsonTagValue != "-" {
 		switch value := jsonOmitEmptyValue.(type) {
 		case *ValueBool:
 			if value.Value {
 				jsonTagValue += ",omitempty"
 			}
 		}
+	}
+
+	if field.IsOptional {
+		if !isJsonOmitEmpty {
+			jsonTagValue += ",omitempty"
+		}
+		jsonTagValue += ",omitzero"
 	}
 
 	sb.WriteString(`json:"`)

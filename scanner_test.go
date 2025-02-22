@@ -49,6 +49,26 @@ func runTestCase(t *testing.T, target int, initState State, testCases TestCases)
 func TestLex(t *testing.T) {
 	runTestCase(t, -1, Lex, TestCases{
 		{
+			input: `model User {
+				id: int64
+				name?: string
+			}`,
+			output: Tokens{
+				Token{Filename: "", Value: "model", Type: 5, Start: 0, End: 5},
+				Token{Filename: "", Value: "User", Type: 2, Start: 6, End: 10},
+				Token{Filename: "", Value: "{", Type: 43, Start: 11, End: 12},
+				Token{Filename: "", Value: "id", Type: 2, Start: 17, End: 19},
+				Token{Filename: "", Value: ":", Type: 40, Start: 19, End: 20},
+				Token{Filename: "", Value: "int64", Type: 14, Start: 21, End: 26},
+				Token{Filename: "", Value: "name", Type: 2, Start: 31, End: 35},
+				Token{Filename: "", Value: "?", Type: 39, Start: 35, End: 36},
+				Token{Filename: "", Value: ":", Type: 40, Start: 36, End: 37},
+				Token{Filename: "", Value: "string", Type: 22, Start: 38, End: 44},
+				Token{Filename: "", Value: "}", Type: 44, Start: 48, End: 49},
+				Token{Filename: "", Value: "", Type: 1, Start: 49, End: 49},
+			},
+		},
+		{
 			input: `service Foo {
 				http GetAssetFile(assetId: string) => (result: file)
 			}`,
