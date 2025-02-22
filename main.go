@@ -7,7 +7,7 @@ import (
 	"strings"
 )
 
-const Version = "0.1.0"
+const Version = "0.1.2"
 
 const usage = `
 ███████╗██╗░░░░░██╗░░░░░░█████╗░
