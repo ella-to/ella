@@ -14,7 +14,7 @@ import (
 //go:embed templates/golang/*.go.tmpl
 var golangTemplateFiles embed.FS
 
-func generateGo(pkg, output string, doc *Document) error {
+func generateGo(pkg, output string, doc *Document, opt *GenerateOption) error {
 	// CONSTANTS
 
 	type GoConst struct {
@@ -100,6 +100,8 @@ func generateGo(pkg, output string, doc *Document) error {
 	}
 
 	type Data struct {
+		Conf GenerateOption
+
 		PackageName  string
 		Constants    []GoConst
 		Enums        []GoEnum
@@ -355,7 +357,7 @@ func generateGo(pkg, output string, doc *Document) error {
 
 	isModelType := createIsModelTypeFunc(doc.Models)
 
-	getServicesByMethodType := func(typ MethodType) []GoService {
+	getServicesByMethodType := func(typ MethodType, modelPkg string) []GoService {
 		return mapperFunc(getGolangServicesByType(doc.Services, typ), func(service *Service) GoService {
 			return GoService{
 				Name: service.Name.Token.Value,
@@ -367,11 +369,11 @@ func generateGo(pkg, output string, doc *Document) error {
 						Args: mapperFunc(method.Args, func(arg *Arg) GoMethodArg {
 							return GoMethodArg{
 								Name: strcase.ToCamel(arg.Name.Token.Value),
-								Type: getGolangType(arg.Type, isModelType),
+								Type: getGolangType(arg.Type, modelPkg, isModelType),
 							}
 						}),
 						Returns: mapperFunc(method.Returns, func(ret *Return) GoMethodReturn {
-							typ := getGolangType(ret.Type, isModelType)
+							typ := getGolangType(ret.Type, modelPkg, isModelType)
 							if ret.Stream && typ == "[]byte" {
 								typ = "io.Reader"
 							}
@@ -488,49 +490,54 @@ func generateGo(pkg, output string, doc *Document) error {
 		})
 	}
 
-	data := Data{
-		PackageName: pkg,
-		Constants: mapperFunc(doc.Consts, func(c *Const) GoConst {
-			return GoConst{
-				Name:  c.Identifier.Token.Value,
-				Value: getGolangValue(c.Value),
-			}
-		}),
-		Enums: mapperFunc(doc.Enums, func(enum *Enum) GoEnum {
-			return GoEnum{
-				Name: enum.Name.Token.Value,
-				Type: fmt.Sprintf("int%d", enum.Size),
-				Keys: mapperFunc(enum.Sets, func(set *EnumSet) GoEnumKeyValue {
-					return GoEnumKeyValue{
-						Name:  set.Name.Token.Value,
-						Value: fmt.Sprintf("%d", set.Value.Value),
-					}
-				}),
-			}
-		}),
-		Models: mapperFunc(doc.Models, func(model *Model) GoModel {
-			return GoModel{
-				Name: model.Name.Token.Value,
-				Fields: mapperFunc(model.Fields, func(field *Field) GoModelField {
-					return GoModelField{
-						Name: field.Name.Token.Value,
-						Type: getGolangType(field.Type, isModelType),
-						Tags: getGolangModelFieldTag(field),
-					}
-				}),
-			}
-		}),
-		HttpServices: getServicesByMethodType(MethodHTTP),
-		RpcServices:  getServicesByMethodType(MethodRPC),
-		Errors: mapperFunc(doc.Errors, func(err *CustomError) GoError {
-			return GoError{
-				Name:    err.Name.Token.Value,
-				Code:    err.Code,
-				Status:  err.HttpStatus,
-				Message: err.Msg.Value,
-			}
-		}),
+	var data = Data{}
+
+	if opt != nil {
+		data.Conf = *opt
 	}
+
+	data.PackageName = pkg
+	data.Constants = mapperFunc(doc.Consts, func(c *Const) GoConst {
+		return GoConst{
+			Name:  c.Identifier.Token.Value,
+			Value: getGolangValue(c.Value),
+		}
+	})
+	data.Enums = mapperFunc(doc.Enums, func(enum *Enum) GoEnum {
+		return GoEnum{
+			Name: enum.Name.Token.Value,
+			Type: fmt.Sprintf("int%d", enum.Size),
+			Keys: mapperFunc(enum.Sets, func(set *EnumSet) GoEnumKeyValue {
+				return GoEnumKeyValue{
+					Name:  set.Name.Token.Value,
+					Value: fmt.Sprintf("%d", set.Value.Value),
+				}
+			}),
+		}
+	})
+	data.Models = mapperFunc(doc.Models, func(model *Model) GoModel {
+		return GoModel{
+			Name: model.Name.Token.Value,
+			Fields: mapperFunc(model.Fields, func(field *Field) GoModelField {
+				return GoModelField{
+					Name: field.Name.Token.Value,
+					Type: getGolangType(field.Type, data.Conf.ModelPkgName, isModelType),
+					Tags: getGolangModelFieldTag(field),
+				}
+			}),
+		}
+	})
+
+	data.HttpServices = getServicesByMethodType(MethodHTTP, data.Conf.ModelPkgName)
+	data.RpcServices = getServicesByMethodType(MethodRPC, data.Conf.ModelPkgName)
+	data.Errors = mapperFunc(doc.Errors, func(err *CustomError) GoError {
+		return GoError{
+			Name:    err.Name.Token.Value,
+			Code:    err.Code,
+			Status:  err.HttpStatus,
+			Message: err.Msg.Value,
+		}
+	})
 
 	return tmpl.ExecuteTemplate(out, "main", data)
 }
@@ -578,12 +585,17 @@ func getGolangValue(value Value) string {
 	}
 }
 
-func getGolangType(typ Type, isModelType func(value string) bool) string {
+func getGolangType(typ Type, modelPkg string, isModelType func(value string) bool) string {
 	switch typ := typ.(type) {
 	case *CustomType:
 		var sb strings.Builder
 		typ.Format(&sb)
 		val := sb.String()
+
+		if modelPkg != "" {
+			val = modelPkg + "." + val
+		}
+
 		if isModelType(val) {
 			return "*" + val
 		}
@@ -605,9 +617,9 @@ func getGolangType(typ Type, isModelType func(value string) bool) string {
 	case *Timestamp:
 		return "time.Time"
 	case *Map:
-		return fmt.Sprintf("map[%s]%s", getGolangType(typ.Key, isModelType), getGolangType(typ.Value, isModelType))
+		return fmt.Sprintf("map[%s]%s", getGolangType(typ.Key, modelPkg, isModelType), getGolangType(typ.Value, modelPkg, isModelType))
 	case *Array:
-		return fmt.Sprintf("[]%s", getGolangType(typ.Type, isModelType))
+		return fmt.Sprintf("[]%s", getGolangType(typ.Type, modelPkg, isModelType))
 	case *File:
 		return "func() (string, io.Reader, error)"
 	}

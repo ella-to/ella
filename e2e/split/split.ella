@@ -1,0 +1,16 @@
+const A = 1
+
+enum Role {
+	User
+	Admin
+}
+
+model User {
+	Id: string
+	Role: Role
+	CreatedAt: timestamp
+}
+
+service UsersService {
+	http Create(role: Role) => (result: User)
+}

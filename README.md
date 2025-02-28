@@ -67,6 +67,14 @@ example:
   ella gen rpc ./path/to/output.ts ./path/to/*.ella ./path/to/other/*.ella
 ```
 
+> NOTE
+> There is an experimental feature which splits const, enum and models from services. The api of cli will change and it is not recommended to use. It only supports golang and has no effect on typescript
+
+```
+ella gen-models model /model/model.gen.go ./schema/*.ella
+ella gen-services api /api/api.gen.go model "example.com/pkg/model" ./schema/*.ella
+```
+
 # Schema
 
 ## Comment

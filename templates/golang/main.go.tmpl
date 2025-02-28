@@ -3,10 +3,19 @@
 
 package {{ .PackageName }}
 
+// Debug information
+// ModelsOnly: {{ .Conf.ModelsOnly }}
+// ServicesOnly: {{ .Conf.ServicesOnly }}
+// IsModelOnly: {{ or .Conf.ModelsOnly (and (not .Conf.ModelsOnly) (not .Conf.ServicesOnly)) }}
+// IsServicesOnly: {{ or .Conf.ServicesOnly (and (not .Conf.ModelsOnly) (not .Conf.ServicesOnly)) }}
+
 {{ template "imports" . }}
+{{- if or .Conf.ModelsOnly (and (not .Conf.ModelsOnly) (not .Conf.ServicesOnly)) -}}
 {{ template "constants" . }}
 {{ template "enums" . }}
 {{ template "models" . }}
+{{- end }}
+{{- if or .Conf.ServicesOnly (and (not .Conf.ModelsOnly) (not .Conf.ServicesOnly)) -}}
 {{ template "services" . }}
 {{ template "http.server" . }}
 {{ template "rpc.server" . }}
@@ -14,5 +23,5 @@ package {{ .PackageName }}
 {{ template "rpc.client" . }}
 {{ template "errors" . }}
 {{ template "helper" . }}
-
+{{- end }}
 {{- end }}

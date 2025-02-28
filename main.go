@@ -55,7 +55,33 @@ func main() {
 			fmt.Print(usage)
 			os.Exit(0)
 		}
-		err = gen(os.Args[2], os.Args[3], os.Args[4:]...)
+		err = gen(os.Args[2], os.Args[3], os.Args[4:], nil)
+	case "gen-models":
+		if len(os.Args) < 5 {
+			fmt.Print(usage)
+			os.Exit(0)
+		}
+
+		pkg := os.Args[2]
+		out := os.Args[3]
+		searchPaths := os.Args[4:]
+
+		err = genModelsOnly(pkg, out, searchPaths...)
+
+	case "gen-services":
+		if len(os.Args) < 7 {
+			fmt.Print(usage)
+			os.Exit(0)
+		}
+
+		pkg := os.Args[2]
+		out := os.Args[3]
+		modelsPkg := os.Args[4]
+		modelsPath := os.Args[5]
+		searchPaths := os.Args[6:]
+
+		err = genServicesOnly(pkg, out, modelsPkg, modelsPath, searchPaths...)
+
 	case "ver":
 		fmt.Println(Version)
 	default:
@@ -93,7 +119,7 @@ func format(path string) error {
 	return nil
 }
 
-func gen(pkg, out string, searchPaths ...string) (err error) {
+func gen(pkg, out string, searchPaths []string, opt *GenerateOption) (err error) {
 	var docs []*Document
 
 	for _, searchPath := range searchPaths {
@@ -116,5 +142,17 @@ func gen(pkg, out string, searchPaths ...string) (err error) {
 		return err
 	}
 
-	return Generate(pkg, out, docs)
+	return Generate(pkg, out, docs, opt)
+}
+
+func genModelsOnly(pkg, out string, searchPaths ...string) (err error) {
+	return gen(pkg, out, searchPaths, &GenerateOption{ModelsOnly: true})
+}
+
+func genServicesOnly(pkg, out, modelsPkg, modelsPath string, searchPaths ...string) (err error) {
+	return gen(pkg, out, searchPaths, &GenerateOption{
+		ServicesOnly: true,
+		ModelPkgName: modelsPkg,
+		ModelPkgPath: modelsPath,
+	})
 }

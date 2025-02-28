@@ -4,6 +4,7 @@
 // Imports
 //
 
+{{- if and (not .Conf.ModelsOnly) (not .Conf.ServicesOnly) }}
 import (
 	"bytes"
 	"context"
@@ -30,5 +31,42 @@ func init() {
 		panic("ella.to/sse version must be at least v0.0.7")
 	}
 }
+{{- else if .Conf.ModelsOnly }}
+import (
+	"fmt"
+	"strings"
+	"time"
+)
+
+var _ = time.Now()
+{{- else }}
+import (
+	"bytes"
+	"context"
+	"crypto/rand"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"log/slog"
+	"mime/multipart"
+	"net/http"
+	"net/url"
+	"path"
+	"reflect"
+	"strconv"
+	"strings"
+	"time"
+
+	"ella.to/sse"
+	{{ .Conf.ModelPkgName }} "{{ .Conf.ModelPkgPath }}"
+)
+
+func init() {
+	if sse.Version < "0.0.7" {
+		panic("ella.to/sse version must be at least v0.0.7")
+	}
+}
+{{- end }}
 {{ end -}}
 

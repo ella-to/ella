@@ -8,7 +8,14 @@ import (
 	"ella.to/ella/internal/strcase"
 )
 
-func Generate(pkg, output string, docs []*Document) error {
+type GenerateOption struct {
+	ServicesOnly bool
+	ModelsOnly   bool
+	ModelPkgName string
+	ModelPkgPath string
+}
+
+func Generate(pkg, output string, docs []*Document, opt *GenerateOption) error {
 	mainDoc := &Document{
 		Consts:   make([]*Const, 0),
 		Enums:    make([]*Enum, 0),
@@ -40,7 +47,7 @@ func Generate(pkg, output string, docs []*Document) error {
 	}
 
 	if strings.HasSuffix(output, ".go") {
-		return generateGo(pkg, output, mainDoc)
+		return generateGo(pkg, output, mainDoc, opt)
 	} else if strings.HasSuffix(output, ".ts") {
 		return generateTypescript(pkg, output, mainDoc)
 	}
