@@ -9,6 +9,12 @@ export enum ErrorCode {
 {{- end }}
 }
 
+export const ErrorCode2Name = {
+{{- range $err := .Errors }}
+    [{{ $err.Code }}]: '{{ $err.Name }}',
+{{- end }}
+}
+
 export function ErrorIs(err: any, errCode: ErrorCode): boolean {
   return (err instanceof ResponseError) && err.code === errCode
 }
