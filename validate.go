@@ -12,6 +12,7 @@ import (
 // [x] All the same service's method names should be unique
 // [x] All the same enum's keys should be unique
 // [x] Constant assignment should be valid and the name of the constant should be available
+// [x] Check if Custom Types (Model and Enum names) are defined in Model's fields and Service's arguments and return types
 // [ ] There should be only one method's argument with type of file
 // [ ] There should be only one stream return type
 // [ ] The key type of map should be comparable type
@@ -280,6 +281,45 @@ func Validate(docs ...*Document) error {
 	}
 
 	{
+		// check for custom types name exist
+		typesMap := make(map[string]struct{})
+
+		for _, m := range models {
+			typesMap[m.Name.Token.Value] = struct{}{}
+		}
+
+		for _, e := range enums {
+			typesMap[e.Name.Token.Value] = struct{}{}
+		}
+
+		// check for custom types name exist in models
+		for _, m := range models {
+			for _, f := range m.Fields {
+				if err := checkTypeExists(typesMap, f.Type); err != nil {
+					return err
+				}
+			}
+		}
+
+		// check for custom types name exist in services
+		for _, s := range services {
+			for _, m := range s.Methods {
+				for _, a := range m.Args {
+					if err := checkTypeExists(typesMap, a.Type); err != nil {
+						return err
+					}
+				}
+
+				for _, r := range m.Returns {
+					if err := checkTypeExists(typesMap, r.Type); err != nil {
+						return err
+					}
+				}
+			}
+		}
+	}
+
+	{
 		// check for custom errors
 		sort.Slice(customErrors, func(i, j int) bool {
 			return customErrors[i].Name.Token.Value < customErrors[j].Name.Token.Value
@@ -312,4 +352,21 @@ func Validate(docs ...*Document) error {
 	}
 
 	return nil
+}
+
+func checkTypeExists(typesMap map[string]struct{}, t Type) error {
+	switch v := t.(type) {
+	case *Map:
+		return checkTypeExists(typesMap, v.Value)
+	case *Array:
+		return checkTypeExists(typesMap, v.Type)
+	case *CustomType:
+		if _, ok := typesMap[v.Token.Value]; !ok {
+			return NewError(v.Token, "type is not defined")
+		}
+		return nil
+	default:
+		// Handle other types which is already checked in the parser
+		return nil
+	}
 }
