@@ -4,7 +4,7 @@
 █████╗░░██║░░░░░██║░░░░░███████║
 ██╔══╝░░██║░░░░░██║░░░░░██╔══██║
 ███████╗███████╗███████╗██║░░██║
-╚══════╝╚══════╝╚══════╝╚═╝░░╚═╝ v0.1.3
+╚══════╝╚══════╝╚══════╝╚═╝░░╚═╝ v0.1.4
 ```
 
 Ella, is yet another compiler to produce Go and Typescript code based on simple and easy-to-read schema IDL. There are many tools like gRPC, Twirp or event WebRPC to generate codes, but this little compiler is designed based on my views of 12+ years of developing backends and APIs. I wanted to simplify the tooling and produce almost perfect optimized, handcrafted code that can be read and understood.
@@ -47,7 +47,7 @@ The full CLI documentation can be accessed by running Ella command without any a
 █████╗░░██║░░░░░██║░░░░░███████║
 ██╔══╝░░██║░░░░░██║░░░░░██╔══██║
 ███████╗███████╗███████╗██║░░██║
-╚══════╝╚══════╝╚══════╝╚═╝░░╚═╝ v0.1.3
+╚══════╝╚══════╝╚══════╝╚═╝░░╚═╝ v0.1.4
 
 Usage: ella [command]
 
