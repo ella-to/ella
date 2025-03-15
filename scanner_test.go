@@ -54,48 +54,49 @@ func TestLex(t *testing.T) {
 				name?: string
 			}`,
 			output: Tokens{
-				Token{Filename: "", Value: "model", Type: 5, Start: 0, End: 5},
-				Token{Filename: "", Value: "User", Type: 2, Start: 6, End: 10},
-				Token{Filename: "", Value: "{", Type: 43, Start: 11, End: 12},
-				Token{Filename: "", Value: "id", Type: 2, Start: 17, End: 19},
-				Token{Filename: "", Value: ":", Type: 40, Start: 19, End: 20},
-				Token{Filename: "", Value: "int64", Type: 14, Start: 21, End: 26},
-				Token{Filename: "", Value: "name", Type: 2, Start: 31, End: 35},
-				Token{Filename: "", Value: "?", Type: 39, Start: 35, End: 36},
-				Token{Filename: "", Value: ":", Type: 40, Start: 36, End: 37},
-				Token{Filename: "", Value: "string", Type: 22, Start: 38, End: 44},
-				Token{Filename: "", Value: "}", Type: 44, Start: 48, End: 49},
-				Token{Filename: "", Value: "", Type: 1, Start: 49, End: 49},
+				{Type: TokModel, Start: 0, End: 5, Value: "model"},
+				{Type: TokIdentifier, Start: 6, End: 10, Value: "User"},
+				{Type: TokOpenCurly, Start: 11, End: 12, Value: "{"},
+				{Type: TokIdentifier, Start: 17, End: 19, Value: "id"},
+				{Type: TokColon, Start: 19, End: 20, Value: ":"},
+				{Type: TokInt64, Start: 21, End: 26, Value: "int64"},
+				{Type: TokIdentifier, Start: 31, End: 35, Value: "name"},
+				{Type: TokOptional, Start: 35, End: 36, Value: "?"},
+				{Type: TokColon, Start: 36, End: 37, Value: ":"},
+				{Type: TokString, Start: 38, End: 44, Value: "string"},
+				{Type: TokCloseCurly, Start: 48, End: 49, Value: "}"},
+				{Type: TokEOF, Start: 49, End: 49, Value: ""},
 			},
 		},
 		{
-			input: `service Foo {
-				http GetAssetFile(assetId: string) => (result: file)
+			input: `service HttpFoo {
+				GetAssetFile(assetId: string) => (result: stream []byte)
 			}`,
 			output: Tokens{
 				{Type: TokService, Start: 0, End: 7, Value: "service"},
-				{Type: TokIdentifier, Start: 8, End: 11, Value: "Foo"},
-				{Type: TokOpenCurly, Start: 12, End: 13, Value: "{"},
-				{Type: TokHttp, Start: 18, End: 22, Value: "http"},
-				{Type: TokIdentifier, Start: 23, End: 35, Value: "GetAssetFile"},
-				{Type: TokOpenParen, Start: 35, End: 36, Value: "("},
-				{Type: TokIdentifier, Start: 36, End: 43, Value: "assetId"},
-				{Type: TokColon, Start: 43, End: 44, Value: ":"},
-				{Type: TokString, Start: 45, End: 51, Value: "string"},
-				{Type: TokCloseParen, Start: 51, End: 52, Value: ")"},
-				{Type: TokReturn, Start: 53, End: 55, Value: "=>"},
-				{Type: TokOpenParen, Start: 56, End: 57, Value: "("},
-				{Type: TokIdentifier, Start: 57, End: 63, Value: "result"},
-				{Type: TokColon, Start: 63, End: 64, Value: ":"},
-				{Type: TokFile, Start: 65, End: 69, Value: "file"},
-				{Type: TokCloseParen, Start: 69, End: 70, Value: ")"},
-				{Type: TokCloseCurly, Start: 74, End: 75, Value: "}"},
-				{Type: TokEOF, Start: 75, End: 75, Value: ""},
+				{Type: TokIdentifier, Start: 8, End: 15, Value: "HttpFoo"},
+				{Type: TokOpenCurly, Start: 16, End: 17, Value: "{"},
+				{Type: TokIdentifier, Start: 22, End: 34, Value: "GetAssetFile"},
+				{Type: TokOpenParen, Start: 34, End: 35, Value: "("},
+				{Type: TokIdentifier, Start: 35, End: 42, Value: "assetId"},
+				{Type: TokColon, Start: 42, End: 43, Value: ":"},
+				{Type: TokString, Start: 44, End: 50, Value: "string"},
+				{Type: TokCloseParen, Start: 50, End: 51, Value: ")"},
+				{Type: TokReturn, Start: 52, End: 54, Value: "=>"},
+				{Type: TokOpenParen, Start: 55, End: 56, Value: "("},
+				{Type: TokIdentifier, Start: 56, End: 62, Value: "result"},
+				{Type: TokColon, Start: 62, End: 63, Value: ":"},
+				{Type: TokStream, Start: 64, End: 70, Value: "stream"},
+				{Type: TokArray, Start: 71, End: 73, Value: "[]"},
+				{Type: TokByte, Start: 73, End: 77, Value: "byte"},
+				{Type: TokCloseParen, Start: 77, End: 78, Value: ")"},
+				{Type: TokCloseCurly, Start: 82, End: 83, Value: "}"},
+				{Type: TokEOF, Start: 83, End: 83, Value: ""},
 			},
 		},
 		{
-			input: `service Foo {
-				rpc GetFoo() => (value: int64) {
+			input: `service RpcFoo {
+				GetFoo() => (value: int64) {
 					Required
 					A = 1mb
 					B = 100h
@@ -103,29 +104,28 @@ func TestLex(t *testing.T) {
 			}`,
 			output: Tokens{
 				{Type: TokService, Start: 0, End: 7, Value: "service"},
-				{Type: TokIdentifier, Start: 8, End: 11, Value: "Foo"},
-				{Type: TokOpenCurly, Start: 12, End: 13, Value: "{"},
-				{Type: TokRpc, Start: 18, End: 21, Value: "rpc"},
-				{Type: TokIdentifier, Start: 22, End: 28, Value: "GetFoo"},
-				{Type: TokOpenParen, Start: 28, End: 29, Value: "("},
-				{Type: TokCloseParen, Start: 29, End: 30, Value: ")"},
-				{Type: TokReturn, Start: 31, End: 33, Value: "=>"},
-				{Type: TokOpenParen, Start: 34, End: 35, Value: "("},
-				{Type: TokIdentifier, Start: 35, End: 40, Value: "value"},
-				{Type: TokColon, Start: 40, End: 41, Value: ":"},
-				{Type: TokInt64, Start: 42, End: 47, Value: "int64"},
-				{Type: TokCloseParen, Start: 47, End: 48, Value: ")"},
-				{Type: TokOpenCurly, Start: 49, End: 50, Value: "{"},
-				{Type: TokIdentifier, Start: 56, End: 64, Value: "Required"},
-				{Type: TokIdentifier, Start: 70, End: 71, Value: "A"},
-				{Type: TokAssign, Start: 72, End: 73, Value: "="},
-				{Type: TokConstBytes, Start: 74, End: 77, Value: "1mb"},
-				{Type: TokIdentifier, Start: 83, End: 84, Value: "B"},
-				{Type: TokAssign, Start: 85, End: 86, Value: "="},
-				{Type: TokConstDuration, Start: 87, End: 91, Value: "100h"},
-				{Type: TokCloseCurly, Start: 96, End: 97, Value: "}"},
-				{Type: TokCloseCurly, Start: 101, End: 102, Value: "}"},
-				{Type: TokEOF, Start: 102, End: 102, Value: ""},
+				{Type: TokIdentifier, Start: 8, End: 14, Value: "RpcFoo"},
+				{Type: TokOpenCurly, Start: 15, End: 16, Value: "{"},
+				{Type: TokIdentifier, Start: 21, End: 27, Value: "GetFoo"},
+				{Type: TokOpenParen, Start: 27, End: 28, Value: "("},
+				{Type: TokCloseParen, Start: 28, End: 29, Value: ")"},
+				{Type: TokReturn, Start: 30, End: 32, Value: "=>"},
+				{Type: TokOpenParen, Start: 33, End: 34, Value: "("},
+				{Type: TokIdentifier, Start: 34, End: 39, Value: "value"},
+				{Type: TokColon, Start: 39, End: 40, Value: ":"},
+				{Type: TokInt64, Start: 41, End: 46, Value: "int64"},
+				{Type: TokCloseParen, Start: 46, End: 47, Value: ")"},
+				{Type: TokOpenCurly, Start: 48, End: 49, Value: "{"},
+				{Type: TokIdentifier, Start: 55, End: 63, Value: "Required"},
+				{Type: TokIdentifier, Start: 69, End: 70, Value: "A"},
+				{Type: TokAssign, Start: 71, End: 72, Value: "="},
+				{Type: TokConstBytes, Start: 73, End: 76, Value: "1mb"},
+				{Type: TokIdentifier, Start: 82, End: 83, Value: "B"},
+				{Type: TokAssign, Start: 84, End: 85, Value: "="},
+				{Type: TokConstDuration, Start: 86, End: 90, Value: "100h"},
+				{Type: TokCloseCurly, Start: 95, End: 96, Value: "}"},
+				{Type: TokCloseCurly, Start: 100, End: 101, Value: "}"},
+				{Type: TokEOF, Start: 101, End: 101, Value: ""},
 			},
 		},
 		{
@@ -140,7 +140,7 @@ func TestLex(t *testing.T) {
 		{
 			skip: true,
 			input: `
-			
+
 			# this is a comment 1
 			# this is another comment 2
 			a = 1 # this is a comment 3
@@ -151,7 +151,7 @@ func TestLex(t *testing.T) {
 				# this is another comment 6
 				firstname: string
 			}
-			
+
 			`,
 			output: Tokens{
 				{Type: TokComment, Start: 9, End: 29, Value: " this is a comment 1"},
@@ -180,7 +180,6 @@ func TestLex(t *testing.T) {
 			# This is a first comment
 			a = 1 # this is the second comment
 			# this is the third comment
-
 
 			`,
 			output: Tokens{
@@ -293,7 +292,7 @@ func TestLex(t *testing.T) {
 		},
 		{
 			input: `
-			
+
 			a = 1.0
 
 			message A {
@@ -303,53 +302,52 @@ func TestLex(t *testing.T) {
 				}
 			}
 
-			service MyService {
-				http GetUserById (id: int64) => (user: User) {
+			service HttpMyService {
+				GetUserById (id: int64) => (user: User) {
 					method = "GET"
 				}
 			}
-			
+
 			`,
 			output: Tokens{
-				{Type: TokIdentifier, Start: 8, End: 9, Value: "a"},
-				{Type: TokAssign, Start: 10, End: 11, Value: "="},
-				{Type: TokConstFloat, Start: 12, End: 15, Value: "1.0"},
-				{Type: TokIdentifier, Start: 20, End: 27, Value: "message"},
-				{Type: TokIdentifier, Start: 28, End: 29, Value: "A"},
-				{Type: TokOpenCurly, Start: 30, End: 31, Value: "{"},
-				{Type: TokIdentifier, Start: 36, End: 45, Value: "firstname"},
-				{Type: TokColon, Start: 45, End: 46, Value: ":"},
-				{Type: TokString, Start: 47, End: 53, Value: "string"},
-				{Type: TokOpenCurly, Start: 54, End: 55, Value: "{"},
-				{Type: TokIdentifier, Start: 61, End: 69, Value: "required"},
-				{Type: TokIdentifier, Start: 75, End: 82, Value: "pattern"},
-				{Type: TokAssign, Start: 83, End: 84, Value: "="},
-				{Type: TokConstStringDoubleQuote, Start: 86, End: 97, Value: "^[a-zA-Z]+$"},
-				{Type: TokCloseCurly, Start: 103, End: 104, Value: "}"},
-				{Type: TokCloseCurly, Start: 108, End: 109, Value: "}"},
-				{Type: TokService, Start: 114, End: 121, Value: "service"},
-				{Type: TokIdentifier, Start: 122, End: 131, Value: "MyService"},
-				{Type: TokOpenCurly, Start: 132, End: 133, Value: "{"},
-				{Type: TokHttp, Start: 138, End: 142, Value: "http"},
-				{Type: TokIdentifier, Start: 143, End: 154, Value: "GetUserById"},
-				{Type: TokOpenParen, Start: 155, End: 156, Value: "("},
-				{Type: TokIdentifier, Start: 156, End: 158, Value: "id"},
-				{Type: TokColon, Start: 158, End: 159, Value: ":"},
-				{Type: TokInt64, Start: 160, End: 165, Value: "int64"},
-				{Type: TokCloseParen, Start: 165, End: 166, Value: ")"},
-				{Type: TokReturn, Start: 167, End: 169, Value: "=>"},
-				{Type: TokOpenParen, Start: 170, End: 171, Value: "("},
-				{Type: TokIdentifier, Start: 171, End: 175, Value: "user"},
-				{Type: TokColon, Start: 175, End: 176, Value: ":"},
-				{Type: TokIdentifier, Start: 177, End: 181, Value: "User"},
-				{Type: TokCloseParen, Start: 181, End: 182, Value: ")"},
-				{Type: TokOpenCurly, Start: 183, End: 184, Value: "{"},
-				{Type: TokIdentifier, Start: 190, End: 196, Value: "method"},
-				{Type: TokAssign, Start: 197, End: 198, Value: "="},
-				{Type: TokConstStringDoubleQuote, Start: 200, End: 203, Value: "GET"},
-				{Type: TokCloseCurly, Start: 209, End: 210, Value: "}"},
-				{Type: TokCloseCurly, Start: 214, End: 215, Value: "}"},
-				{Type: TokEOF, Start: 223, End: 223, Value: ""},
+				{Type: TokIdentifier, Start: 5, End: 6, Value: "a"},
+				{Type: TokAssign, Start: 7, End: 8, Value: "="},
+				{Type: TokConstFloat, Start: 9, End: 12, Value: "1.0"},
+				{Type: TokIdentifier, Start: 17, End: 24, Value: "message"},
+				{Type: TokIdentifier, Start: 25, End: 26, Value: "A"},
+				{Type: TokOpenCurly, Start: 27, End: 28, Value: "{"},
+				{Type: TokIdentifier, Start: 33, End: 42, Value: "firstname"},
+				{Type: TokColon, Start: 42, End: 43, Value: ":"},
+				{Type: TokString, Start: 44, End: 50, Value: "string"},
+				{Type: TokOpenCurly, Start: 51, End: 52, Value: "{"},
+				{Type: TokIdentifier, Start: 58, End: 66, Value: "required"},
+				{Type: TokIdentifier, Start: 72, End: 79, Value: "pattern"},
+				{Type: TokAssign, Start: 80, End: 81, Value: "="},
+				{Type: TokConstStringDoubleQuote, Start: 83, End: 94, Value: "^[a-zA-Z]+$"},
+				{Type: TokCloseCurly, Start: 100, End: 101, Value: "}"},
+				{Type: TokCloseCurly, Start: 105, End: 106, Value: "}"},
+				{Type: TokService, Start: 111, End: 118, Value: "service"},
+				{Type: TokIdentifier, Start: 119, End: 132, Value: "HttpMyService"},
+				{Type: TokOpenCurly, Start: 133, End: 134, Value: "{"},
+				{Type: TokIdentifier, Start: 139, End: 150, Value: "GetUserById"},
+				{Type: TokOpenParen, Start: 151, End: 152, Value: "("},
+				{Type: TokIdentifier, Start: 152, End: 154, Value: "id"},
+				{Type: TokColon, Start: 154, End: 155, Value: ":"},
+				{Type: TokInt64, Start: 156, End: 161, Value: "int64"},
+				{Type: TokCloseParen, Start: 161, End: 162, Value: ")"},
+				{Type: TokReturn, Start: 163, End: 165, Value: "=>"},
+				{Type: TokOpenParen, Start: 166, End: 167, Value: "("},
+				{Type: TokIdentifier, Start: 167, End: 171, Value: "user"},
+				{Type: TokColon, Start: 171, End: 172, Value: ":"},
+				{Type: TokIdentifier, Start: 173, End: 177, Value: "User"},
+				{Type: TokCloseParen, Start: 177, End: 178, Value: ")"},
+				{Type: TokOpenCurly, Start: 179, End: 180, Value: "{"},
+				{Type: TokIdentifier, Start: 186, End: 192, Value: "method"},
+				{Type: TokAssign, Start: 193, End: 194, Value: "="},
+				{Type: TokConstStringDoubleQuote, Start: 196, End: 199, Value: "GET"},
+				{Type: TokCloseCurly, Start: 205, End: 206, Value: "}"},
+				{Type: TokCloseCurly, Start: 210, End: 211, Value: "}"},
+				{Type: TokEOF, Start: 216, End: 216, Value: ""},
 			},
 		},
 		{

@@ -135,18 +135,10 @@ func filesFromGlob(searchPath string) ([]string, error) {
 		return nil, fmt.Errorf("glob pattern should not be used in dir level: %s", searchPath)
 	}
 
-	fmt.Println("dir: ", dir, "pattern: ", pattern)
-
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return nil, err
 	}
-
-	for _, entry := range entries {
-		fmt.Println(entry.Name(), entry.IsDir())
-	}
-
-	return filenames, nil
 
 	for _, entry := range entries {
 		if entry.IsDir() {
@@ -159,10 +151,6 @@ func filesFromGlob(searchPath string) ([]string, error) {
 		if match {
 			filenames = append(filenames, filepath.Join(dir, entry.Name()))
 		}
-	}
-
-	for _, filename := range filenames {
-		fmt.Println(filename)
 	}
 
 	return filenames, nil

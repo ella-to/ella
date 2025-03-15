@@ -8,11 +8,8 @@ package {{ .PackageName }}
 {{ template "enums" . }}
 {{ template "models" . }}
 {{ template "services" . }}
-{{ template "http.server" . }}
-{{ template "rpc.server" . }}
-{{ template "http.client" . }}
-{{ template "rpc.client" . }}
+{{ template "servers" . }}
 {{ template "errors" . }}
-{{ template "helper" . }}
+{{ template "helpers" . }}
 
 {{- end }}

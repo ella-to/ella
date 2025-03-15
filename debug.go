@@ -26,6 +26,15 @@ func NewError(tok *Token, format string, args ...any) error {
 	}
 }
 
+func NewErrorWithEndToken(start *Token, end *Token, format string, args ...any) error {
+	return &Error{
+		Filename: start.Filename,
+		Start:    start.Start,
+		End:      end.End,
+		Message:  fmt.Sprintf(format, args...),
+	}
+}
+
 func PrettyMessageWithFilename(filename string, start int, end int, msg string) string {
 	b, err := os.ReadFile(filename)
 	if err != nil {

@@ -1,7 +1,58 @@
-{{- define "helpers" }}
+package main
+
+import (
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"time"
+
+	"ella.to/sse"
+)
+
+type request struct {
+	Id     string          `json:"id"`
+	Method string          `json:"method"`
+	Params json.RawMessage `json:"params"`
+}
+
+type response struct {
+	Id      string `json:"id"`
+	Results []any  `json:"results"`
+}
+
 //
-// Helper functions
+// Receiver
 //
+
+type Receiver interface {
+	Receive(ctx context.Context, in io.Reader, out io.Writer)
+}
+
+type ReceiverFunc func(ctx context.Context, in io.Reader, out io.Writer)
+
+func (f ReceiverFunc) Receive(ctx context.Context, in io.Reader, out io.Writer) {
+	f(ctx, in, out)
+}
+
+//
+// Dialer
+//
+
+type Dialer interface {
+	Dial(ctx context.Context, in io.Reader, out io.Writer)
+}
+
+type DialerFunc func(ctx context.Context, in io.Reader, out io.Writer)
+
+func (f DialerFunc) Dial(ctx context.Context, in io.Reader, out io.Writer) {
+	f(ctx, in, out)
+}
 
 //
 // Context Key
@@ -25,118 +76,6 @@ type Metadata struct {
 func MetaDataFromContext(ctx context.Context) *Metadata {
 	meta, _ := ctx.Value(ctxMetadataKey).(*Metadata)
 	return meta
-}
-
-// Http
-
-type httpServiceMethodHandler func(context.Context, http.ResponseWriter, *http.Request)
-
-// Error
-
-type Error struct {
-	Code    int64  `json:"code"`
-	Message string `json:"message"`
-	Status  int    `json:"status"`
-	Cause   error  `json:"cause,omitempty"`
-}
-
-var _ error = (*Error)(nil)
-
-func (e *Error) Error() string {
-	if e.Cause != nil {
-		return fmt.Sprintf("%d: %s: %v", e.Code, e.Message, e.Cause)
-	}
-	return fmt.Sprintf("%d: %s", e.Code, e.Message)
-}
-
-func (e Error) Is(target error) bool {
-	if target == nil {
-		return false
-	}
-	if rpcErr, ok := target.(*Error); ok {
-		return rpcErr.Code == e.Code
-	}
-	return errors.Is(e.Cause, target)
-}
-
-func (e Error) Unwrap() error {
-	return e.Cause
-}
-
-func (e Error) WithCause(cause error) *Error {
-	err := e
-	err.Cause = cause
-	return &err
-}
-
-func (e Error) WithMsg(msg string, args ...any) *Error {
-	err := e
-	err.Message = fmt.Sprintf(msg, args...)
-	return &err
-}
-
-func (e *Error) MarshalJSON() ([]byte, error) {
-	payload := struct {
-		Error struct {
-			Code    int64  `json:"code"`
-			Message string `json:"message"`
-			Status  int    `json:"status"`
-			Cause   string `json:"cause,omitempty"`
-		} `json:"error"`
-	}{}
-
-	payload.Error.Code = e.Code
-	payload.Error.Message = e.Message
-	payload.Error.Status = e.Status
-	if e.Cause != nil {
-		payload.Error.Cause = e.Cause.Error()
-	}
-
-	return json.Marshal(payload)
-}
-
-func (e *Error) UnmarshalJSON(data []byte) error {
-	wrapper := struct {
-		Error json.RawMessage `json:"error"`
-	}{}
-
-	if err := json.Unmarshal(data, &wrapper); err != nil {
-		return err
-	}
-
-	if bytes.Index(wrapper.Error, []byte("{")) == 0 {
-		return json.Unmarshal(wrapper.Error, e)
-	}
-
-	e.Message = string(wrapper.Error)
-	e.Code = 0
-	e.Status = 500
-	e.Cause = nil
-
-	return nil
-}
-
-func newError(code int64, status int, format string, args ...any) *Error {
-	return &Error{
-		Code:    code,
-		Message: fmt.Sprintf(format, args...),
-		Status:  status,
-	}
-}
-
-//
-// Process Helpers
-//
-
-type request struct {
-	Id     string          `json:"id"`
-	Method string          `json:"method"`
-	Params json.RawMessage `json:"params"`
-}
-
-type response struct {
-	Id      string `json:"id"`
-	Results []any  `json:"results"`
 }
 
 // NewHttpReceiver support only the following accept types
@@ -305,32 +244,167 @@ func CreateRegistry() *Registry {
 	}
 }
 
-// Receiver
+func NewHttpDialer(url string, client *http.Client) Dialer {
+	if client == nil {
+		client = http.DefaultClient
+	}
 
-type Receiver interface {
-	Receive(ctx context.Context, in io.Reader, out io.Writer)
+	return DialerFunc(func(ctx context.Context, in io.Reader, out io.Writer) {
+		meta := MetaDataFromContext(ctx)
+
+		r, err := http.NewRequestWithContext(ctx, http.MethodPost, url, in)
+		if err != nil {
+			return
+		}
+
+		r.Header.Set("Content-Type", meta.ContentType)
+
+		resp, err := client.Do(r)
+		if err != nil {
+			return
+		}
+
+		io.Copy(out, resp.Body)
+	})
 }
 
-type ReceiverFunc func(ctx context.Context, in io.Reader, out io.Writer)
-
-func (f ReceiverFunc) Receive(ctx context.Context, in io.Reader, out io.Writer) {
-	f(ctx, in, out)
+type httpUserServiceClient struct {
 }
 
-// Dialer
+var _ HttpUserService = (*httpUserServiceClient)(nil)
 
-type Dialer interface {
-	Dial(ctx context.Context, req io.Reader) (resp io.Reader)
+func CreateHttpUserServiceClient(dialer Dialer) HttpUserService {
 }
 
-type DialerFunc func(ctx context.Context, req io.Reader) (resp io.Reader)
-
-func (f DialerFunc) Dial(ctx context.Context, req io.Reader) (resp io.Reader) {
-	return f(ctx, req)
+func errorAsReader(err error) io.Reader {
+	return nil
 }
 
-{{ range $size, $_ := .Process }}
-func process{{ $size }}[{{ GenArgsGenerics $size }}](fn func(context.Context, A) ({{ GenReturnsGenerics $size }})) Receiver {
+type Event struct {
+	Id string `json:"id"`
+}
+
+type File struct {
+	Id   string `json:"id"`
+	Name string `json:"name"`
+}
+
+type TestService interface {
+	Add(ctx context.Context, a, b int) (int, error)
+	Events(ctx context.Context, id string) (<-chan *Event, error)
+	Download(ctx context.Context, id string) (io.Reader, error)
+	Upload(ctx context.Context, id string, files func() (string, io.Reader, error)) ([]*File, error)
+}
+
+func RegisterRpcTestService(r *Registry, srv TestService) {
+	r.Register(
+		"RpcTestService.Add",
+		processAndReturn2(
+			func(
+				ctx context.Context,
+				args struct {
+					A int `json:"a"`
+					B int `json:"b"`
+				},
+			) (int, error) {
+				return srv.Add(ctx, args.A, args.B)
+			},
+		),
+	)
+
+	r.Register(
+		"RpcTestService.Events",
+		processStream(
+			func(
+				ctx context.Context,
+				args struct {
+					Id string `json:"id"`
+				},
+			) (
+				<-chan *Event,
+				error,
+			) {
+				return srv.Events(ctx, args.Id)
+			},
+		),
+	)
+
+	r.Register(
+		"RpcTestService.Download",
+		processBinaryStream(
+			func(
+				ctx context.Context,
+				args struct {
+					Id string `json:"id"`
+				},
+			) (io.Reader, error) {
+				return srv.Download(ctx, args.Id)
+			},
+		),
+	)
+
+	r.Register(
+		"RpcTestService.Upload",
+		processUploadAndReturn2(
+			func(
+				ctx context.Context,
+				args struct {
+					Id string
+				},
+				files func() (string, io.Reader, error),
+			) ([]*File, error) {
+				return srv.Upload(ctx, args.Id, files)
+			},
+		),
+	)
+}
+
+func main() {
+	server := httptest.NewServer(
+		NewHttpReceiver(
+			ReceiverFunc(
+				func(ctx context.Context, in io.Reader, out io.Writer) {
+					w, ok := out.(http.ResponseWriter)
+					if !ok {
+						return
+					}
+
+					pusher, err := sse.NewHttpPusher(w, 500*time.Millisecond)
+					if err != nil {
+						return
+					}
+
+					for range 100 {
+						err = pusher.Push(sse.NewMessage("1", "hello", "world"))
+						if err != nil {
+							return
+						}
+
+						time.Sleep(2 * time.Second)
+					}
+				},
+			),
+		),
+	)
+	defer server.Close()
+
+	fmt.Println(server.URL)
+
+	select {}
+
+	// dialer := NewHttpDialer(server.URL)
+
+	// resp := dialer.Dial(context.Background(), strings.NewReader("hello"))
+	// io.Copy(os.Stdout, resp)
+}
+
+//
+// Helper functions
+//
+
+// SERVER
+
+func caller1[A any](fn func(context.Context, A) error) Receiver {
 	return ReceiverFunc(func(ctx context.Context, in io.Reader, out io.Writer) {
 		var a A
 		if err := json.NewDecoder(in).Decode(&a); err != nil {
@@ -341,10 +415,65 @@ func process{{ $size }}[{{ GenArgsGenerics $size }}](fn func(context.Context, A)
 		marshalArray(out)(fn(ctx, a))
 	})
 }
-{{ end -}}
 
-{{ range $size, $_ := .ProcessUpload }}
-func processUpload{{ $size }}[{{ GenArgsGenerics $size }}](fn func(context.Context, A, func() (string, io.Reader, error)) ({{ GenReturnsGenerics $size }})) Receiver {
+func processAndReturn2[A, R1 any](fn func(context.Context, A) (R1, error)) Receiver {
+	return ReceiverFunc(func(ctx context.Context, in io.Reader, out io.Writer) {
+		var a A
+		if err := json.NewDecoder(in).Decode(&a); err != nil {
+			marshalError(out, err)
+			return
+		}
+
+		marshalArray(out)(fn(ctx, a))
+	})
+}
+
+func processStream[A any](fn func(context.Context, A) (<-chan *Event, error)) Receiver {
+	return ReceiverFunc(func(ctx context.Context, in io.Reader, out io.Writer) {
+		var a A
+		if err := json.NewDecoder(in).Decode(&a); err != nil {
+			marshalError(out, err)
+			return
+		}
+
+		ch, err := fn(ctx, a)
+		if err != nil {
+			marshalError(out, err)
+			return
+		}
+
+		pusher := sse.NewPushWriter(out, 500*time.Millisecond)
+
+		for e := range ch {
+			if err := pusher.Push(sse.NewMessage(e.Id, "data", e)); err != nil {
+				return
+			}
+		}
+	})
+}
+
+func processBinaryStream[A any](fn func(context.Context, A) (io.Reader, error)) Receiver {
+	return ReceiverFunc(func(ctx context.Context, in io.Reader, out io.Writer) {
+		var a A
+		if err := json.NewDecoder(in).Decode(&a); err != nil {
+			marshalError(out, err)
+			return
+		}
+
+		r, err := fn(ctx, a)
+		if err != nil {
+			marshalError(out, err)
+			return
+		}
+
+		if _, err := io.Copy(out, r); err != nil {
+			marshalError(out, err)
+			return
+		}
+	})
+}
+
+func processUploadAndReturn2[A any](fn func(context.Context, A, func() (string, io.Reader, error)) ([]*File, error)) Receiver {
 	return ReceiverFunc(func(ctx context.Context, _ io.Reader, out io.Writer) {
 		meta := MetaDataFromContext(ctx)
 		if meta == nil {
@@ -374,60 +503,6 @@ func processUpload{{ $size }}[{{ GenArgsGenerics $size }}](fn func(context.Conte
 	})
 }
 
-{{- end }}
-
-{{- if .ProcessStream }}
-
-func processStream[A any](fn func(context.Context, A) (<-chan *Event, error)) Receiver {
-	return ReceiverFunc(func(ctx context.Context, in io.Reader, out io.Writer) {
-		var a A
-		if err := json.NewDecoder(in).Decode(&a); err != nil {
-			marshalError(out, err)
-			return
-		}
-
-		ch, err := fn(ctx, a)
-		if err != nil {
-			marshalError(out, err)
-			return
-		}
-
-		pusher := sse.NewPushWriter(out, 500*time.Millisecond)
-
-		for e := range ch {
-			if err := pusher.Push(sse.NewMessage(e.Id, "data", e)); err != nil {
-				return
-			}
-		}
-	})
-}
-{{- end }}
-
-{{- if .ProcessBinary }}
-
-func processBinary[A any](fn func(context.Context, A) (io.Reader, error)) Receiver {
-	return ReceiverFunc(func(ctx context.Context, in io.Reader, out io.Writer) {
-		var a A
-		if err := json.NewDecoder(in).Decode(&a); err != nil {
-			marshalError(out, err)
-			return
-		}
-
-		r, err := fn(ctx, a)
-		if err != nil {
-			marshalError(out, err)
-			return
-		}
-
-		if _, err := io.Copy(out, r); err != nil {
-			marshalError(out, err)
-			return
-		}
-	})
-}
-
-{{- end }}
-
 func marshalError(out io.Writer, err error) error {
 	return json.NewEncoder(out).Encode(err)
 }
@@ -443,5 +518,3 @@ func marshalArray(out io.Writer) func(args ...any) {
 		json.NewEncoder(out).Encode(args)
 	}
 }
-
-{{- end }}

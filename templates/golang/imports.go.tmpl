@@ -7,18 +7,12 @@
 import (
 	"bytes"
 	"context"
-	"crypto/rand"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 	"mime/multipart"
 	"net/http"
-	"net/url"
-	"path"
-	"reflect"
-	"strconv"
 	"strings"
 	"time"
 
@@ -26,6 +20,7 @@ import (
 )
 
 func init() {
+	_ = time.Time{}
 	if sse.Version < "0.0.7" {
 		panic("ella.to/sse version must be at least v0.0.7")
 	}

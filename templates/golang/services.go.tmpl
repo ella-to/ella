@@ -1,21 +1,21 @@
 {{- define "services" -}}
 
 //
-// Services
+// Http Services ({{ .HttpServices | Length }})
 //
 {{ range $service := .HttpServices }}
-type Http{{ $service.Name }} interface {
+type {{ $service.Name }} interface {
 	{{- range $method := $service.Methods }}
-    {{- if $method.HttpRawControl }}
-    {{ $method.Name }}(ctx context.Context, w http.ResponseWriter, r *http.Request)
-    {{- else }}
 	{{ $method.Name }}({{ $method.Args | ToMethodArgs }}) ({{ $method.Returns | ToMethodReturns }})
-    {{- end }}
 	{{- end }}
 }
 {{- end }}
+
+//
+// Rpc Services ({{ .RpcServices | Length }})
+//
 {{ range $service := .RpcServices }}
-type Rpc{{ $service.Name }} interface {
+type {{ $service.Name }} interface {
 	{{- range $method := $service.Methods }}
 	{{ $method.Name }}({{ $method.Args | ToMethodArgs }}) ({{ $method.Returns | ToMethodReturns }})
 	{{- end }}

@@ -51,8 +51,9 @@ func generateGo(pkg, output string, doc *Document) error {
 	// SERVICES
 
 	type GoMethodArg struct {
-		Name string
-		Type string
+		Name   string
+		Type   string
+		Stream bool
 	}
 
 	type GoMethodReturn struct {
@@ -68,21 +69,16 @@ func generateGo(pkg, output string, doc *Document) error {
 
 	type GoMethod struct {
 		Name        string
-		Type        string // http, rpc
 		ServiceName string // add this so it would be easier to generate the service path
 		Args        []GoMethodArg
 		Returns     []GoMethodReturn
 		Options     []GoMethodOption
 
-		HasArgs        bool
-		HasReturns     bool
-		HttpRawControl bool
-		HttpMethod     string
-		IsBinary       bool
-		IsStream       bool
-		IsUpload       bool
-		Timeout        int64
-		TotalMaxSize   int64
+		IsBinary     bool
+		IsStream     bool
+		IsUpload     bool
+		Timeout      int64
+		TotalMaxSize int64
 	}
 
 	type GoService struct {
@@ -100,52 +96,82 @@ func generateGo(pkg, output string, doc *Document) error {
 	}
 
 	type Data struct {
-		PackageName  string
-		Constants    []GoConst
-		Enums        []GoEnum
-		Models       []GoModel
-		HttpServices []GoService
-		RpcServices  []GoService
-		Errors       []GoError
+		PackageName   string
+		Constants     []GoConst
+		Enums         []GoEnum
+		Models        []GoModel
+		HttpServices  []GoService
+		RpcServices   []GoService
+		Errors        []GoError
+		Process       map[int]struct{}
+		ProcessStream bool
+		ProcessBinary bool
+		ProcessUpload map[int]struct{}
 	}
 
 	tmpl, err := template.
 		New("GenerateGo").
 		Funcs(defaultFuncsMap).
 		Funcs(template.FuncMap{
+			"GenArgsGenerics": func(size int) string {
+				var sb strings.Builder
+
+				sb.WriteString("A")
+				for i := 1; i <= size; i++ {
+					sb.WriteString(fmt.Sprintf(", R%d", i))
+				}
+				sb.WriteString(" any")
+
+				return sb.String()
+			},
+			"GenReturnsGenerics": func(size int) string {
+				var sb strings.Builder
+
+				for i := 1; i <= size; i++ {
+					if i > 1 {
+						sb.WriteString(", ")
+					}
+					sb.WriteString(fmt.Sprintf("R%d", i))
+				}
+
+				if size > 0 {
+					sb.WriteString(", ")
+				}
+
+				sb.WriteString("error")
+
+				return sb.String()
+			},
+			"ProcessName": func(method GoMethod) string {
+				if method.IsUpload {
+					return fmt.Sprintf("processUpload%d", len(method.Returns))
+				}
+
+				if method.IsBinary {
+					return "processBinary"
+				}
+
+				if method.IsStream {
+					return "processStream"
+				}
+
+				return fmt.Sprintf("process%d", len(method.Returns))
+			},
 			"ToMethodArgs": func(args []GoMethodArg) string {
 				var sb strings.Builder
 
 				sb.WriteString("ctx context.Context")
 
-				// for file upload we will suffle the order of the arguments
-				// and put the file upload argument at the end
-				{
-					// First find the index of the file upload argument
-					fileUploadArgIdx := -1
-					for i, arg := range args {
-						if arg.Type == "func() (string, io.Reader, error)" {
-							fileUploadArgIdx = i
-							break
-						}
-					}
-
-					// If we found the file upload argument, we will suffle the order
-					// and move it to the end
-					if fileUploadArgIdx != -1 {
-						element := args[fileUploadArgIdx]
-						// Remove the element from its current position
-						args = append(args[:fileUploadArgIdx], args[fileUploadArgIdx+1:]...)
-						// Append it to the end
-						args = append(args, element)
-					}
-				}
-
 				for _, arg := range args {
 					sb.WriteString(", ")
 					sb.WriteString(arg.Name)
 					sb.WriteString(" ")
-					sb.WriteString(arg.Type)
+
+					if arg.Stream && arg.Type == "[]byte" {
+						sb.WriteString("func() (filename string, content io.Reader, err error)")
+					} else {
+						sb.WriteString(arg.Type)
+					}
 				}
 
 				return sb.String()
@@ -160,7 +186,15 @@ func generateGo(pkg, output string, doc *Document) error {
 
 					sb.WriteString(ret.Name)
 					sb.WriteString(" ")
-					sb.WriteString(ret.Type)
+
+					if ret.Stream && ret.Type != "[]byte" {
+						sb.WriteString("<-chan ")
+						sb.WriteString(ret.Type)
+					} else if ret.Stream && ret.Type == "[]byte" {
+						sb.WriteString("io.Reader")
+					} else {
+						sb.WriteString(ret.Type)
+					}
 				}
 
 				if len(returns) > 0 {
@@ -179,172 +213,25 @@ func generateGo(pkg, output string, doc *Document) error {
 				}
 				return false
 			},
-			"ToServicePathName": func(service GoService) string {
-				return fmt.Sprintf("PathHttp%sPrefix", strcase.ToPascal(service.Name))
-			},
-			"ToServicePathValue": func(service GoService) string {
-				return fmt.Sprintf("/ella/http/%s/", strcase.ToPascal(service.Name))
-			},
-			"ToMethodPathName": func(method GoMethod) string {
-				return fmt.Sprintf("PathHttp%s%sMethod", strcase.ToPascal(method.ServiceName), strcase.ToPascal(method.Name))
-			},
-			"ToMethodPathValue": func(method GoMethod) string {
-				return fmt.Sprintf("/ella/http/%s/%s", strcase.ToPascal(method.ServiceName), strcase.ToPascal(method.Name))
-			},
-			"ToHttpServiceImplName": func(service GoService) string {
-				return fmt.Sprintf("http%sServer", strcase.ToPascal(service.Name))
-			},
-			"ToRpcServiceTopicName": func(service GoService) string {
-				return fmt.Sprintf("TopicRpc%s", strcase.ToPascal(service.Name))
-			},
-			"ToRpcServiceTopicValue": func(service GoService) string {
-				return fmt.Sprintf("ella.rpc.%s.*", strcase.ToSnake(service.Name))
-			},
-			"ToRpcServiceMethodTopicName": func(method GoMethod) string {
-				return fmt.Sprintf("TopicRpc%s%sMethod", strcase.ToPascal(method.ServiceName), strcase.ToPascal(method.Name))
-			},
-			"ToRpcServiceMethodTopicValue": func(method GoMethod) string {
-				return fmt.Sprintf("ella.rpc.%s.%s", strcase.ToSnake(method.ServiceName), strcase.ToSnake((method.Name)))
-			},
-			"ToArgsDefinition": func(tabs int, args []GoMethodArg) string {
-				var sb strings.Builder
-
-				i := 0
-
-				for _, arg := range args {
-					if arg.Type == "func() (string, io.Reader, error)" {
-						continue
-					}
-
-					if i > 0 {
-						sb.WriteString("\n")
-					}
-
-					sb.WriteString(strings.Repeat("	", tabs))
-					sb.WriteString(strcase.ToPascal(arg.Name))
-					sb.WriteString(" ")
-					sb.WriteString(arg.Type)
-					sb.WriteString(" `json:\"")
-					sb.WriteString(strcase.ToCamel(arg.Name))
-					sb.WriteString("\"`")
-
-					i++
-				}
-
-				return sb.String()
-			},
-			"GetArgFileUploadName": func(args []GoMethodArg) string {
-				for _, arg := range args {
-					if arg.Type == "func() (string, io.Reader, error)" {
-						return arg.Name
-					}
-				}
-
-				return ""
-			},
-			"ArgsList": func(args []GoMethodArg) string {
-				var sb strings.Builder
-
-				i := 0
-				for _, arg := range args {
-					if arg.Type == "func() (string, io.Reader, error)" {
-						continue
-					}
-
-					if i > 0 {
-						sb.WriteString(", ")
-					}
-
-					sb.WriteString(arg.Name)
-					i++
-				}
-
-				return sb.String()
-			},
-			"ToArgsAccess": func(prefix string, args []GoMethodArg) string {
-				var sb strings.Builder
-
-				sb.WriteString("ctx")
-
-				i := 0
-				for _, arg := range args {
-					if arg.Type == "func() (string, io.Reader, error)" {
-						continue
-					}
-
-					sb.WriteString(", ")
-
-					sb.WriteString(prefix)
-					sb.WriteString(strcase.ToPascal(arg.Name))
-					i++
-				}
-
-				return sb.String()
-			},
-			"ToReturnsDefinition": func(tabs int, returns []GoMethodReturn) string {
-				// We don't need to return anything if the method is a stream
-				// because the return type is already known as (io.Reader, string, string, error)
-				// for binary or channel of the return type
-				for _, ret := range returns {
-					if ret.Stream || strings.Index(ret.Type, "<-chan") != -1 {
-						return ""
-					}
-				}
-
-				var sb strings.Builder
-
-				for i, ret := range returns {
-					if i > 0 {
-						sb.WriteString("\n")
-					}
-
-					sb.WriteString(strings.Repeat("	", tabs))
-					sb.WriteString(strcase.ToPascal(ret.Name))
-					sb.WriteString(" ")
-					sb.WriteString(ret.Type)
-					sb.WriteString(" `json:\"")
-					sb.WriteString(strcase.ToCamel(ret.Name))
-					sb.WriteString("\"`")
-
-					i++
-				}
-
-				return sb.String()
-			},
-			"ToReturnsAccess": func(prefix string, returns []GoMethodReturn) string {
-				var sb strings.Builder
-
-				for i, ret := range returns {
-					if i > 0 {
-						sb.WriteString(", ")
-					}
-
-					sb.WriteString(prefix)
-					sb.WriteString(strcase.ToPascal(ret.Name))
-				}
-
-				if len(returns) > 0 {
-					sb.WriteString(", ")
-				}
-
-				sb.WriteString("err")
-
-				return sb.String()
-			},
-			"StreamType": func(returns []GoMethodReturn) (typ string) {
-				ret := returns[0]
-				typ = strings.ReplaceAll(ret.Type, "<-chan ", "")
-
-				return
-			},
-			"IsPointerType": func(typ string) bool {
-				return strings.HasPrefix(typ, "*")
-			},
 		}).
 		ParseFS(golangTemplateFiles, "templates/golang/*.go.tmpl")
 	if err != nil {
 		return err
 	}
+
+	// List all the files inside golangTemplateFiles
+	//
+	// fmt.Println("Golang template files:")
+	// entries, err := golangTemplateFiles.ReadDir("templates/golang")
+	// if err != nil {
+	// 	return fmt.Errorf("failed to read template directory: %w", err)
+	// }
+
+	// for _, entry := range entries {
+	// 	if !entry.IsDir() {
+	// 		fmt.Printf("  - %s\n", entry.Name())
+	// 	}
+	// }
 
 	out, err := os.Create(output)
 	if err != nil {
@@ -355,30 +242,27 @@ func generateGo(pkg, output string, doc *Document) error {
 
 	isModelType := createIsModelTypeFunc(doc.Models)
 
-	getServicesByMethodType := func(typ MethodType) []GoService {
+	getServicesByType := func(typ ServiceType) []GoService {
 		return mapperFunc(getGolangServicesByType(doc.Services, typ), func(service *Service) GoService {
 			return GoService{
 				Name: service.Name.Token.Value,
 				Methods: mapperFunc(service.Methods, func(method *Method) GoMethod {
 					goMethod := GoMethod{
 						Name:        method.Name.Token.Value,
-						Type:        method.Type.String(),
 						ServiceName: service.Name.Token.Value,
 						Args: mapperFunc(method.Args, func(arg *Arg) GoMethodArg {
+							// func() (string, io.Reader, error)
 							return GoMethodArg{
-								Name: strcase.ToCamel(arg.Name.Token.Value),
-								Type: getGolangType(arg.Type, isModelType),
+								Name:   strcase.ToCamel(arg.Name.Token.Value),
+								Type:   getGolangType(arg.Type, isModelType),
+								Stream: arg.Stream,
 							}
 						}),
 						Returns: mapperFunc(method.Returns, func(ret *Return) GoMethodReturn {
-							typ := getGolangType(ret.Type, isModelType)
-							if ret.Stream && typ == "[]byte" {
-								typ = "io.Reader"
-							}
-
+							// io.Reader
 							return GoMethodReturn{
 								Name:   strcase.ToCamel(ret.Name.Token.Value),
-								Type:   typ,
+								Type:   getGolangType(ret.Type, isModelType),
 								Stream: ret.Stream,
 							}
 						}),
@@ -390,96 +274,21 @@ func generateGo(pkg, output string, doc *Document) error {
 						}),
 					}
 
-					goMethod.HasArgs = len(goMethod.Args) > 0
-					goMethod.HasReturns = len(goMethod.Returns) > 0
-
-					// the default value for http method is POST
-					if typ == MethodHTTP {
-						goMethod.HttpMethod = "POST"
-						goMethod.TotalMaxSize = 2 * 1024 * 1024
-					}
-
-					for _, opt := range goMethod.Options {
-						switch opt.Name {
-						case "HttpRawControl":
-							if typ != MethodHTTP {
-								break
-							}
-
-							goMethod.HttpRawControl = true
-
-						case "HttpMethod":
-							if typ != MethodHTTP {
-								break
-							}
-
-							if v, ok := opt.Value.(*ValueString); ok {
-								goMethod.HttpMethod = v.Value
-							} else {
-								goMethod.HttpMethod = "POST"
-							}
-
-						case "Timeout":
-							if typ != MethodHTTP {
-								break
-							}
-
-							if v, ok := opt.Value.(*ValueDuration); ok {
-								goMethod.Timeout = v.Value * int64(v.Scale)
-							}
-
-						case "TotalMaxSize":
-							if typ != MethodHTTP {
-								break
-							}
-
-							if v, ok := opt.Value.(*ValueByteSize); ok {
-								goMethod.TotalMaxSize = v.Value * int64(v.Scale)
-							}
-						}
-					}
-
 					for _, arg := range goMethod.Args {
-						if arg.Type == "func() (string, io.Reader, error)" {
-							if typ == MethodHTTP {
-								goMethod.IsUpload = true
-							}
+						if arg.Stream {
+							goMethod.IsUpload = true
+							break
 						}
 					}
 
 					for _, ret := range goMethod.Returns {
 						if ret.Stream {
-							if typ == MethodHTTP {
-								goMethod.IsStream = true
-							}
+							goMethod.IsStream = true
 						}
 
-						if ret.Type == "io.Reader" {
-							if typ == MethodHTTP {
-								goMethod.IsBinary = true
-							}
+						if ret.Type == "[]byte" {
+							goMethod.IsBinary = true
 						}
-					}
-
-					if goMethod.IsStream && !goMethod.IsBinary {
-						goMethod.Returns = []GoMethodReturn{
-							{
-								Name: goMethod.Returns[0].Name,
-								Type: "<-chan " + goMethod.Returns[0].Type,
-							},
-						}
-					}
-
-					// need to add filename:string and contentType:string to returns
-					// if the method is stream and binary
-					if goMethod.IsStream && goMethod.IsBinary {
-						goMethod.Returns = append(goMethod.Returns, GoMethodReturn{
-							Name: "filename",
-							Type: "string",
-						}, GoMethodReturn{
-							Name: "contentType",
-							Type: "string",
-						})
 					}
 
 					return goMethod
@@ -520,8 +329,8 @@ func generateGo(pkg, output string, doc *Document) error {
 				}),
 			}
 		}),
-		HttpServices: getServicesByMethodType(MethodHTTP),
-		RpcServices:  getServicesByMethodType(MethodRPC),
+		HttpServices: getServicesByType(ServiceHTTP),
+		RpcServices:  getServicesByType(ServiceRPC),
 		Errors: mapperFunc(doc.Errors, func(err *CustomError) GoError {
 			return GoError{
 				Name:    err.Name.Token.Value,
@@ -530,28 +339,39 @@ func generateGo(pkg, output string, doc *Document) error {
 				Message: err.Msg.Value,
 			}
 		}),
+		Process:       make(map[int]struct{}),
+		ProcessStream: false,
+		ProcessBinary: false,
+		ProcessUpload: make(map[int]struct{}),
+	}
+
+	// adding some info about process functions
+	// so they can be generated in the correct order
+	for _, service := range data.HttpServices {
+		for _, method := range service.Methods {
+			if method.IsUpload {
+				data.ProcessUpload[len(method.Returns)] = struct{}{}
+			} else if method.IsBinary {
+				data.ProcessBinary = true
+			} else if method.IsStream {
+				data.ProcessStream = true
+			} else {
+				data.Process[len(method.Returns)] = struct{}{}
+			}
+		}
+	}
+	for _, service := range data.HttpServices {
+		for _, method := range service.Methods {
+			data.Process[len(method.Returns)] = struct{}{}
+		}
 	}
 
 	return tmpl.ExecuteTemplate(out, "main", data)
 }
 
-func getGolangServicesByType(services []*Service, typ MethodType) []*Service {
-	return mapperFunc(filterFunc(services, func(service *Service) bool {
-		for _, method := range service.Methods {
-			if method.Type == typ || method.Type == MethodRpcHttp {
-				return true
-			}
-		}
-		return false
-	}), func(service *Service) *Service {
-		return &Service{
-			Token: service.Token,
-			Name:  service.Name,
-			Methods: filterFunc(service.Methods, func(method *Method) bool {
-				return method.Type == typ || method.Type == MethodRpcHttp
-			}),
-			Comments: service.Comments,
-		}
+func getGolangServicesByType(services []*Service, typ ServiceType) []*Service {
+	return filterFunc(services, func(service *Service) bool {
+		return service.Type == typ
 	})
 }
 
@@ -608,12 +428,10 @@ func getGolangType(typ Type, isModelType func(value string) bool) string {
 		return fmt.Sprintf("map[%s]%s", getGolangType(typ.Key, isModelType), getGolangType(typ.Value, isModelType))
 	case *Array:
 		return fmt.Sprintf("[]%s", getGolangType(typ.Type, isModelType))
-	case *File:
-		return "func() (string, io.Reader, error)"
+	default:
+		// This shouldn't happen as the validator should catch this any errors
+		panic(fmt.Sprintf("unknown type: %T", typ))
 	}
-
-	// This shouldn't happen as the validator should catch this any errors
-	panic(fmt.Sprintf("unknown type: %T", typ))
 }
 
 func getGolangModelFieldTag(field *Field) string {

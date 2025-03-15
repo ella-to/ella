@@ -251,3 +251,47 @@ model User {
 		assert.Equal(t, strings.TrimSpace(tc.output), sb.String())
 	}
 }
+
+func TestParsComplex(t *testing.T) {
+	testCases := []struct {
+		input  string
+		output string
+		error  string
+	}{
+		{
+			input: `
+service RpcUserService {
+    GetUserById(id: string) => (user: User)
+}
+			`,
+			output: `
+service RpcUserService {
+    GetUserById (id: string) => (user: User)
+}`,
+		},
+		{
+			input: `
+service HttpUserService {
+    UploadAvatar(id: string, data: stream []byte)
+}
+					`,
+			output: `
+service HttpUserService {
+    UploadAvatar (id: string, data: stream []byte)
+}`,
+		},
+	}
+
+	for _, tc := range testCases {
+		var sb strings.Builder
+		parser := NewParser(tc.input)
+
+		result, err := ParseDocument(parser)
+		if !assert.NoError(t, err) {
+			return
+		}
+
+		result.Format(&sb)
+		assert.Equal(t, strings.TrimSpace(tc.output), sb.String())
+	}
+}

@@ -257,18 +257,6 @@ func (v *ValueVariable) value() {}
 // Type
 //
 
-type File struct {
-	Token *Token
-}
-
-var _ Type = (*File)(nil)
-
-func (f *File) Format(sb *strings.Builder) {
-	sb.WriteString("file")
-}
-
-func (f *File) typ() {}
-
 type CustomType struct {
 	Token *Token
 }
@@ -822,8 +810,9 @@ func (m *Model) AddComments(comments ...*Comment) {
 //
 
 type Arg struct {
-	Name *Identifier
-	Type Type
+	Name   *Identifier
+	Type   Type
+	Stream bool
 }
 
 var _ (Node) = (*Arg)(nil)
@@ -831,6 +820,9 @@ var _ (Node) = (*Arg)(nil)
 func (a *Arg) Format(sb *strings.Builder) {
 	a.Name.Format(sb)
 	sb.WriteString(": ")
+	if a.Stream {
+		sb.WriteString("stream ")
+	}
 	a.Type.Format(sb)
 }
 
@@ -851,30 +843,7 @@ func (r *Return) Format(sb *strings.Builder) {
 	r.Type.Format(sb)
 }
 
-type MethodType int
-
-const (
-	_             MethodType = iota
-	MethodRPC                // rpc
-	MethodHTTP               // http
-	MethodRpcHttp            // rpc, http
-)
-
-func (m MethodType) String() string {
-	switch m {
-	case MethodRPC:
-		return "rpc"
-	case MethodHTTP:
-		return "http"
-	case MethodRpcHttp:
-		return "rpc,http"
-	default:
-		return "unknown"
-	}
-}
-
 type Method struct {
-	Type     MethodType // rpc, http
 	Name     *Identifier
 	Args     []*Arg
 	Returns  []*Return
@@ -891,15 +860,6 @@ func (m *Method) Format(sb *strings.Builder) {
 	}
 
 	sb.WriteString("\n    ")
-
-	switch m.Type {
-	case MethodRPC:
-		sb.WriteString("rpc ")
-	case MethodHTTP:
-		sb.WriteString("http ")
-	case MethodRpcHttp:
-		sb.WriteString("rpc, http ")
-	}
 
 	m.Name.Format(sb)
 	sb.WriteString(" (")
@@ -933,9 +893,29 @@ func (m *Method) AddComments(comments ...*Comment) {
 	m.Comments = append(m.Comments, comments...)
 }
 
+type ServiceType int
+
+const (
+	_           ServiceType = iota
+	ServiceRPC              // rpc
+	ServiceHTTP             // http
+)
+
+func (m ServiceType) String() string {
+	switch m {
+	case ServiceRPC:
+		return "rpc"
+	case ServiceHTTP:
+		return "http"
+	default:
+		return "unknown"
+	}
+}
+
 type Service struct {
 	Token    *Token
 	Name     *Identifier
+	Type     ServiceType
 	Methods  []*Method
 	Comments []*Comment
 }

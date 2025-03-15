@@ -260,12 +260,6 @@ func reservedKeywrod(l *Lexer) bool {
 	case "model":
 		l.Emit(TokModel)
 		return true
-	case "http":
-		l.Emit(TokHttp)
-		return true
-	case "rpc":
-		l.Emit(TokRpc)
-		return true
 	case "service":
 		l.Emit(TokService)
 		return true
@@ -316,9 +310,6 @@ func reservedKeywrod(l *Lexer) bool {
 		return true
 	case "any":
 		l.Emit(TokAny)
-		return true
-	case "file":
-		l.Emit(TokFile)
 		return true
 	case "stream":
 		l.Emit(TokStream)

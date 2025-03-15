@@ -62,8 +62,6 @@ const (
 	TokConst                                     // const
 	TokEnum                                      // enum
 	TokModel                                     // model
-	TokHttp                                      // http
-	TokRpc                                       // rpc
 	TokService                                   // service
 	TokByte                                      // byte
 	TokBool                                      // bool
@@ -82,7 +80,6 @@ const (
 	TokMap                                       // map
 	TokArray                                     // array []
 	TokAny                                       // any
-	TokFile                                      // file
 	TokStream                                    // stream
 	TokConstDuration                             // 1ns, 1us, 1ms, 1s, 1m, 1h
 	TokConstBytes                                // 1b, 1kb, 1mb, 1gb, 1tb, 1pb, 1eb
@@ -123,10 +120,6 @@ func (tt TokenType) String() string {
 		return "Enum"
 	case TokModel:
 		return "Model"
-	case TokHttp:
-		return "Http"
-	case TokRpc:
-		return "Rpc"
 	case TokService:
 		return "Service"
 	case TokByte:
@@ -163,8 +156,6 @@ func (tt TokenType) String() string {
 		return "Array"
 	case TokAny:
 		return "Any"
-	case TokFile:
-		return "File"
 	case TokStream:
 		return "Stream"
 	case TokConstDuration:
@@ -189,6 +180,8 @@ func (tt TokenType) String() string {
 		return "Return"
 	case TokAssign:
 		return "Assign"
+	case TokOptional:
+		return "Optional"
 	case TokColon:
 		return "Colon"
 	case TokComma:

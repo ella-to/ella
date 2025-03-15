@@ -528,8 +528,6 @@ func ParseType(p *Parser) (Type, error) {
 		return &String{Token: p.Next()}, nil
 	case TokAny:
 		return &Any{Token: p.Next()}, nil
-	case TokFile:
-		return &File{Token: p.Next()}, nil
 	case TokIdentifier:
 		nameTok := p.Next()
 
@@ -645,6 +643,14 @@ func ParseService(p *Parser) (service *Service, err error) {
 		return nil, NewError(nameTok, "service name must be in PascalCase format")
 	}
 
+	if strings.HasPrefix(nameTok.Value, "Http") {
+		service.Type = ServiceHTTP
+	} else if strings.HasPrefix(nameTok.Value, "Rpc") {
+		service.Type = ServiceRPC
+	} else {
+		return nil, NewError(nameTok, "service name must start with 'Http' or 'Rpc'")
+	}
+
 	service.Name = &Identifier{Token: nameTok}
 
 	if p.Peek().Type != TokOpenCurly {
@@ -688,54 +694,8 @@ func ParseService(p *Parser) (service *Service, err error) {
 	return service, nil
 }
 
-func ParseMethodType(p *Parser) (MethodType, error) {
-	methodTypes := make([]MethodType, 0)
-	done := false
-	for !done {
-		switch p.Peek().Type {
-		case TokHttp:
-			methodTypes = append(methodTypes, MethodHTTP)
-			p.Next() // skip http
-		case TokRpc:
-			methodTypes = append(methodTypes, MethodRPC)
-			p.Next() // skip rpc
-		case TokComma:
-			if len(methodTypes) == 0 {
-				return 0, NewError(p.Peek(), "expected 'http' or 'rpc' keyword")
-			} else if len(methodTypes) == 2 {
-				return 0, NewError(p.Peek(), "there should be only two method types")
-			}
-
-			p.Next() // skip ','
-			continue
-		default:
-			if len(methodTypes) == 0 {
-				return 0, NewError(p.Peek(), "expected 'http' or 'rpc' keyword")
-			} else if len(methodTypes) > 0 {
-				done = true
-			}
-		}
-	}
-
-	if len(methodTypes) == 0 {
-		return 0, NewError(p.Peek(), "expected 'http' or 'rpc' keyword")
-	}
-
-	if len(methodTypes) == 2 {
-		return MethodRpcHttp, nil
-	}
-
-	return methodTypes[0], nil
-}
-
 func ParseServiceMethod(p *Parser) (method *Method, err error) {
-	methodType, err := ParseMethodType(p)
-	if err != nil {
-		return nil, err
-	}
-
 	method = &Method{
-		Type:    methodType,
 		Args:    make([]*Arg, 0),
 		Returns: make([]*Return, 0),
 		Options: &Options{
@@ -831,6 +791,11 @@ func ParseServiceMethodArgument(p *Parser) (arg *Arg, err error) {
 
 	p.Next() // skip ':'
 
+	if p.Peek().Type == TokStream {
+		arg.Stream = true
+		p.Next() // skip 'stream'
+	}
+
 	arg.Type, err = ParseType(p)
 	if err != nil {
 		return nil, err
@@ -873,9 +838,6 @@ func ParseServiceMethodReturnArg(p *Parser) (ret *Return, err error) {
 	}
 
 	if p.Peek().Type == TokComma {
-		if ret.Stream {
-			return nil, NewError(p.Peek(), "there should be only one stream on the return type")
-		}
 		p.Next() // skip ','
 	}
 

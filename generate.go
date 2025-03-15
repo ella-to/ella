@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"text/template"
 
@@ -54,6 +55,27 @@ var defaultFuncsMap = template.FuncMap{
 	"ToPascalCase": strcase.ToPascal,
 	"ToCamelCase":  strcase.ToCamel,
 	"ToSnakeCase":  strcase.ToSnake,
+	"Length": func(v any) int {
+		switch val := v.(type) {
+		case string:
+			return len(val)
+		case []interface{}:
+			return len(val)
+		case map[string]interface{}:
+			return len(val)
+		default:
+			// Handle other types that implement len
+			// For example, slices, arrays, maps, etc.
+			if rv := reflect.ValueOf(v); rv.Kind() == reflect.Slice ||
+				rv.Kind() == reflect.Array ||
+				rv.Kind() == reflect.Map ||
+				rv.Kind() == reflect.Chan ||
+				rv.Kind() == reflect.String {
+				return rv.Len()
+			}
+			return 0
+		}
+	},
 }
 
 func mapperFunc[I, O any](list []I, f func(I) O) []O {

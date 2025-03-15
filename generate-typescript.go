@@ -19,7 +19,7 @@ func generateTypescript(pkg, output string, doc *Document) error {
 	// Note: Currently we only care about the http services
 	// in typescript, so we filter out the rpc services.
 	doc.Services = filterFunc(doc.Services, func(service *Service) bool {
-		return service.Token.Type != TokenType(MethodRPC)
+		return service.Token.Type != TokenType(ServiceRPC)
 	})
 
 	// CONSTANTS
@@ -297,8 +297,6 @@ func getTypescriptType(typ Type) string {
 		return t.Token.Value
 	case *Byte:
 		return "byte"
-	case *File:
-		return "fileupload"
 	default:
 		panic(fmt.Errorf("unknown type: %T", t))
 	}

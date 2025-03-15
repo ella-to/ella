@@ -13,10 +13,14 @@ import (
 // [x] All the same enum's keys should be unique
 // [x] Constant assignment should be valid and the name of the constant should be available
 // [x] Check if Custom Types (Model and Enum names) are defined in Model's fields and Service's arguments and return types
-// [ ] There should be only one method's argument with type of file
-// [ ] There should be only one stream return type
+// [x] All the arg's and return's names should be unique per method
+// [x] There should be only one method's argument with type of stream []byte
+// [x] There should be only one stream return type
 // [ ] The key type of map should be comparable type
+// [x] Array byte should be used with stream for argument and return types
 // [ ] Validate if Custom Error Code and HttpStatus are valid
+// [x] RpcService should not have any stream type in arguments and return types
+// [x] make sure `err` is not part of any argument or return names
 
 func Validate(docs ...*Document) error {
 	consts := make([]*Const, 0)
@@ -194,14 +198,25 @@ func Validate(docs ...*Document) error {
 					if _, ok := serviceMethodDuplicateArguments[a.Name.Token.Value]; ok {
 						return NewError(a.Name.Token, "argument name is already used in the same method")
 					}
+
+					if a.Name.Token.Value == "err" {
+						return NewError(a.Name.Token, "err is a reserved name")
+					}
+
 					serviceMethodDuplicateArguments[a.Name.Token.Value] = struct{}{}
 				}
 
 				serviceMethodDuplicateReturns := make(map[string]struct{})
+
 				for _, r := range m.Returns {
 					if _, ok := serviceMethodDuplicateReturns[r.Name.Token.Value]; ok {
 						return NewError(r.Name.Token, "return name is already used in the same method")
 					}
+
+					if r.Name.Token.Value == "err" {
+						return NewError(r.Name.Token, "err is a reserved name")
+					}
+
 					serviceMethodDuplicateReturns[r.Name.Token.Value] = struct{}{}
 
 					if _, ok := serviceMethodDuplicateArguments[r.Name.Token.Value]; ok {
@@ -349,6 +364,86 @@ func Validate(docs ...*Document) error {
 				return NewError(e.Token, "http status is not valid in custom error")
 			}
 		}
+	}
+
+	{
+		// check if stream exists in rpc service
+		for _, s := range services {
+			if s.Type == ServiceRPC {
+				for _, m := range s.Methods {
+					for _, a := range m.Args {
+						if a.Stream {
+							return NewError(a.Name.Token, "stream is not allowed in rpc service")
+						}
+					}
+
+					for _, r := range m.Returns {
+						if r.Stream {
+							return NewError(r.Name.Token, "stream is not allowed in rpc service")
+						}
+					}
+				}
+			}
+		}
+	}
+
+	{
+		// check if any of the model's field type is []byte
+		for _, m := range models {
+			for _, f := range m.Fields {
+				if a, ok := f.Type.(*Array); ok {
+					if t := isTypeArrayBytes(a); t != nil {
+						return NewErrorWithEndToken(a.Token, t, "byte array is not allowed in model fields")
+					}
+				}
+			}
+		}
+	}
+
+	{
+		// check stream should be the last argument of Http Method, and should be the only one in method return
+		for _, s := range services {
+			if s.Type != ServiceHTTP {
+				continue
+			}
+
+			for _, m := range s.Methods {
+				hasStream := false
+				for i, a := range m.Args {
+					if a.Stream {
+						if hasStream {
+							return NewError(a.Name.Token, "stream should be the last argument")
+						}
+						hasStream = true
+					} else if hasStream {
+						return NewError(m.Args[i-1].Name.Token, "stream should be the last argument")
+					}
+				}
+
+				hasStream = false
+				for i, r := range m.Returns {
+					if r.Stream {
+						if hasStream {
+							return NewError(r.Name.Token, "stream should be the only return type")
+						}
+						hasStream = true
+					} else if hasStream {
+						return NewError(m.Returns[i-1].Name.Token, "stream should be the only return type")
+					}
+				}
+			}
+		}
+	}
+
+	return nil
+}
+
+func isTypeArrayBytes(t Type) *Token {
+	if a, ok := t.(*Array); ok {
+		if v, ok := a.Type.(*Byte); ok {
+			return v.Token
+		}
+		return isTypeArrayBytes(a.Type)
 	}
 
 	return nil
