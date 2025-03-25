@@ -1,0 +1,31 @@
+{{- define "imports" -}}
+
+//
+// Imports
+//
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"io"
+	"mime/multipart"
+	"net/http"
+	"strings"
+	"time"
+
+	"ella.to/sse"
+)
+
+const requiredSSEVersion = "0.0.8"
+
+func init() {
+	_ = time.Time{}
+	if sse.Version < requiredSSEVersion {
+		panic("ella.to/sse version must be at least v" + requiredSSEVersion)
+	}
+}
+{{ end -}}
+

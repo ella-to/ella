@@ -1,0 +1,203 @@
+{{- define "servers.gen" }}
+{{ range $service := . -}}
+func Register{{ $service.Name }}Server(r Registererer, srv {{ $service.Name }}) {
+	{{- range $method := $service.Methods }}
+	{{- if eq $method.Type 0 }}
+	r.Register(
+		"{{ $service.Name }}.{{ $method.Name }}",
+		{{ $method | GetHandleMethodName }}(
+			func(
+				ctx context.Context,
+				args struct {
+					{{- range $arg := $method.Args }}
+					{{ $arg.Name | ToPascalCase }} {{ $arg.Type }} `json:"{{ $arg.Name | ToCamelCase }}"`
+					{{- end }}
+				},
+			) (
+				{{- range $ret := $method.Returns }}
+				{{ $ret.Type }},
+				{{- end }}
+				error,
+			) {
+				return srv.{{ $method.Name }}(
+					ctx, 
+					{{- range $arg := $method.Args }}
+					args.{{ $arg.Name | ToPascalCase }},
+					{{- end }}
+				)
+			},
+		),
+	)
+	{{- else if eq $method.Type 1 }}
+	r.Register(
+		"{{ $service.Name }}.{{ $method.Name }}",
+		{{ $method | GetHandleMethodName }}(
+			func(
+				ctx context.Context,
+				args struct {
+					{{ range $arg := $method.Args }}
+					{{- if not $arg.Stream -}}
+					{{ $arg.Name | ToPascalCase }} {{ $arg.Type }} `json:"{{ $arg.Name | ToCamelCase }}"`
+					{{- end }}
+					{{- end }}
+				},
+			) (
+				<-chan {{ $method.Returns | ToMethodReturnStreamType}},
+				error,
+			) {
+				return srv.{{ $method.Name }}(
+					ctx, 
+					{{- range $arg := $method.Args }}
+					args.{{ $arg.Name | ToPascalCase }},
+					{{- end }}
+				)
+			},
+		),
+	)	
+	{{- else if eq $method.Type 2 }}
+	r.Register(
+		"{{ $service.Name }}.{{ $method.Name }}",
+		{{ $method | GetHandleMethodName }}(
+			func(
+				ctx context.Context,
+				args struct {
+					{{ range $arg := $method.Args }}
+					{{- if not $arg.Stream -}}
+					{{ $arg.Name | ToPascalCase }} {{ $arg.Type }} `json:"{{ $arg.Name | ToCamelCase }}"`
+					{{- end }}
+					{{- end }}
+				},
+			) (
+				io.Reader, 
+				error,
+			) {
+				return srv.{{ $method.Name }}(
+					ctx, 
+					{{- range $arg := $method.Args }}
+					args.{{ $arg.Name | ToPascalCase }},
+					{{- end }}
+				)
+			},
+		),
+	)
+	{{- else if eq $method.Type 3 }}
+	r.Register(
+		"{{ $service.Name }}.{{ $method.Name }}",
+		{{ $method | GetHandleMethodName }}(
+			func(
+				ctx context.Context,
+				args struct {
+					{{ range $arg := $method.Args }}
+					{{- if not $arg.Stream -}}
+					{{ $arg.Name | ToPascalCase }} {{ $arg.Type }} `json:"{{ $arg.Name | ToCamelCase }}"`
+					{{- end }}
+					{{- end }}
+				},
+				{{ range $arg := $method.Args }}
+				{{- if $arg.Stream -}}
+				{{ $arg.Name }} func() (string, io.Reader, error),
+				{{- end }}
+				{{- end }}
+			) (
+				{{- range $ret := $method.Returns }}
+				{{ $ret.Type }},
+				{{- end }}
+				error,
+			) {
+				return srv.{{ $method.Name }}(
+					ctx, 
+					{{- range $arg := $method.Args }}
+					{{ if not $arg.Stream -}}
+					args.{{ $arg.Name | ToPascalCase }},
+					{{- end }}
+					{{- end }}
+					{{- range $arg := $method.Args }}
+					{{- if $arg.Stream -}}
+					{{ $arg.Name }},
+					{{- end }}
+					{{- end }}
+				)
+			},
+		),
+	)
+	{{- else if eq $method.Type 4 }}
+	r.Register(
+		"{{ $service.Name }}.{{ $method.Name }}",
+		{{ $method | GetHandleMethodName }}(
+			func(
+				ctx context.Context,
+				args struct {
+					{{ range $arg := $method.Args }}
+					{{- if not $arg.Stream -}}
+					{{ $arg.Name | ToPascalCase }} {{ $arg.Type }} `json:"{{ $arg.Name | ToCamelCase }}"`
+					{{- end }}
+					{{- end }}
+				},
+				{{ range $arg := $method.Args }}
+				{{- if $arg.Stream -}}
+				{{ $arg.Name }} func() (string, io.Reader, error),
+				{{- end }}
+				{{- end }}
+			) (
+				<-chan {{ $method.Returns | ToMethodReturnStreamType}},
+				error,
+			) {
+				return srv.{{ $method.Name }}(
+					ctx, 
+					{{- range $arg := $method.Args }}
+					{{ if not $arg.Stream -}}
+					args.{{ $arg.Name | ToPascalCase }},
+					{{- end }}
+					{{- end }}
+					{{- range $arg := $method.Args }}
+					{{- if $arg.Stream -}}
+					{{ $arg.Name }},
+					{{- end }}
+					{{- end }}
+				)
+			},
+		),
+	)	
+	{{- else if eq $method.Type 5 }}
+	r.Register(
+		"{{ $service.Name }}.{{ $method.Name }}",
+		{{ $method | GetHandleMethodName }}(
+			func(
+				ctx context.Context,
+				args struct {
+					{{ range $arg := $method.Args }}
+					{{- if not $arg.Stream -}}
+					{{ $arg.Name | ToPascalCase }} {{ $arg.Type }} `json:"{{ $arg.Name | ToCamelCase }}"`
+					{{- end }}
+					{{- end }}
+				},
+				{{ range $arg := $method.Args }}
+				{{- if $arg.Stream -}}
+				{{ $arg.Name }} func() (string, io.Reader, error),
+				{{- end }}
+				{{- end }}
+			) (
+				io.Reader, 
+				error,
+			) {
+				return srv.{{ $method.Name }}(
+					ctx, 
+					{{- range $arg := $method.Args }}
+					{{ if not $arg.Stream -}}
+					args.{{ $arg.Name | ToPascalCase }},
+					{{- end }}
+					{{- end }}
+					{{- range $arg := $method.Args }}
+					{{- if $arg.Stream -}}
+					{{ $arg.Name }},
+					{{- end }}
+					{{- end }}
+				)
+			},
+		),
+	)	
+	{{- end }}
+	{{- end }}
+}
+{{- end }}
+{{- end }}

@@ -1,0 +1,10 @@
+{{- define "constants" -}}
+
+//
+// Constants
+//
+{{ range $constant := .Constants }}
+export const {{ $constant.Name }} = {{ $constant.Value }}
+{{- end }}
+
+{{- end }}

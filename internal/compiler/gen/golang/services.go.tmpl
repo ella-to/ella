@@ -1,0 +1,25 @@
+{{- define "services" -}}
+
+//
+// Http Services ({{ .HttpServices | Length }})
+//
+{{ range $service := .HttpServices }}
+type {{ $service.Name }} interface {
+	{{- range $method := $service.Methods }}
+	{{ $method.Name }}({{ $method.Args | ToMethodArgs }}) ({{ $method.Returns | ToMethodReturns }})
+	{{- end }}
+}
+{{- end }}
+
+//
+// Rpc Services ({{ .RpcServices | Length }})
+//
+{{ range $service := .RpcServices }}
+type {{ $service.Name }} interface {
+	{{- range $method := $service.Methods }}
+	{{ $method.Name }}({{ $method.Args | ToMethodArgs }}) ({{ $method.Returns | ToMethodReturns }})
+	{{- end }}
+}
+{{- end }}
+
+{{- end }}
