@@ -1,0 +1,10 @@
+{{- define "errors" }}
+//
+// Custom Errors
+//
+
+{{ range $err := .Errors -}}
+var {{ $err.Name }} = newError({{ $err.Code }}, "{{ $err.Message }}")
+{{ end }}
+
+{{- end }}

@@ -1,0 +1,12 @@
+{{- define "servers" -}}
+//
+// Registry Http Services ({{ .HttpServices | Length }})
+//
+{{ template "servers.gen" .HttpServices }}
+
+//
+// Registry Rpc Services ({{ .RpcServices | Length }})
+//
+{{ template "servers.gen" .RpcServices }}
+
+{{- end }}

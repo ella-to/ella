@@ -1,0 +1,39 @@
+{{- define "services" -}}
+//
+// SERVICES
+//
+{{- range $service := .HttpServices }}
+{{ range $method := $service.Methods }}
+interface {{ $method | ArgsName }} {
+{{- range $arg := $method.Args }}
+    {{ $arg.Name | ToCamelCase }}: {{ $arg.Type }};
+{{- end }}
+}
+{{ if ShouldGenerateReturn $method }}
+interface {{ $method | ReturnsName }} {
+{{- range $arg := $method.Returns }}
+    {{ $arg.Name | ToCamelCase }}: {{ $arg.Type }};
+{{- end }}
+}
+{{ end }}
+{{- end }}
+export interface {{ $service.Name }} {
+{{- range $method := $service.Methods }}
+	// method.type {{ $method.Type }}
+{{- if eq $method.Type "fileupload" }} 
+  {{ $method.Name | ToCamelCase }}: ( 
+      files: {name: string, data: Blob}[],
+      args: {{ $method | ArgsName }},
+      opts?: CallServiceOptions
+    ) => Promise<{{ $method | ReturnsName }}>;
+{{- else }}
+  {{ $method.Name | ToCamelCase }}: (
+		args: {{ $method | ArgsName }},
+		opts?: CallServiceOptions
+	) => Promise<{{ $method | ReturnsName }}>;
+{{- end }}
+{{- end }}
+}
+{{- end }}
+
+{{- end }}
