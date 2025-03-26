@@ -1,0 +1,259 @@
+{{- define "clients.gen" }}
+{{ range $service := . -}}
+
+type {{ $service.Name | ToCamelCase }}Client struct {
+  caller Caller
+}
+
+var _ {{ $service.Name }} = (*{{ $service.Name | ToCamelCase }}Client)(nil)
+
+{{ range $method := $service.Methods }}
+
+{{ if eq $method.Type 0 }}
+func (s *{{ $service.Name | ToCamelCase }}Client) {{ $method.Name }}({{ $method.Args | ToMethodArgs }}) ({{ $method.Returns | ToMethodReturns }}) {
+	params, err := json.Marshal(struct {
+    {{- range $arg := $method.Args }}
+      {{ $arg.Name | ToPascalCase }} {{ $arg.Type }} `json:"{{ $arg.Name | ToCamelCase }}"`
+    {{- end }}
+	}{
+    {{- range $arg := $method.Args }}
+      {{ $arg.Name | ToPascalCase }}: {{ $arg.Name | ToCamelCase }},
+    {{- end }}
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	req := &Request{
+		Method: "{{ $service.Name }}.{{ $method.Name }}",
+		Params: params,
+		ContentType: "application/json",
+	}
+
+	body, _ := s.caller.Call(ctx, req)
+	err = parseCallerResponse(body{{ $method.Returns | ToCallerResponse }})
+	return
+}
+
+{{ else if eq $method.Type 1 }}
+
+func (s *{{ $service.Name | ToCamelCase }}Client) {{ $method.Name }}({{ $method.Args | ToMethodArgs }}) ({{ $method.Returns | ToMethodReturns }}) {
+	params, err := json.Marshal(struct {
+    {{- range $arg := $method.Args }}
+      {{ $arg.Name | ToPascalCase }} {{ $arg.Type }} `json:"{{ $arg.Name | ToCamelCase }}"`
+    {{- end }}
+	}{
+    {{- range $arg := $method.Args }}
+      {{ $arg.Name | ToPascalCase }}: {{ $arg.Name | ToCamelCase }},
+    {{- end }}
+	})
+	if err != nil {
+		errs = chanWithError(err)
+		return
+	}
+
+	req := &Request{
+		Method:      "{{ $service.Name }}.{{ $method.Name }}",
+		Params:      params,
+		ContentType: "application/json",
+	}
+
+	body, contentType := s.caller.Call(ctx, req)
+	if contentType == "application/json" {
+		err = parseCallerResponse(body)
+		return
+	}
+
+	return readSSE[{{ $method.Returns | ToMethodReturnTypeIndex 0 }}](ctx, body)
+}
+
+{{ else if eq $method.Type 2 }}
+
+func (s *{{ $service.Name | ToCamelCase }}Client) {{ $method.Name }}({{ $method.Args | ToMethodArgs }}) ({{ $method.Returns | ToMethodReturns }}) {
+	params, err := json.Marshal(struct {
+    {{- range $arg := $method.Args }}
+      {{ $arg.Name | ToPascalCase }} {{ $arg.Type }} `json:"{{ $arg.Name | ToCamelCase }}"`
+    {{- end }}
+	}{
+    {{- range $arg := $method.Args }}
+      {{ $arg.Name | ToPascalCase }}: {{ $arg.Name | ToCamelCase }},
+    {{- end }}
+	})
+	if err != nil {
+		return
+	}
+
+	req := &Request{
+		Method:      "{{ $service.Name }}.{{ $method.Name }}",
+		Params:      params,
+		ContentType: "application/json",
+	}
+
+	body, contentType := s.caller.Call(ctx, req)
+	if contentType == "application/json" {
+		err = parseCallerResponse(body)
+		return
+	}
+
+	return body, nil
+}
+
+{{ else if eq $method.Type 3 }}
+
+func (s *{{ $service.Name | ToCamelCase }}Client) {{ $method.Name }}({{ $method.Args | ToMethodArgs }}) ({{ $method.Returns | ToMethodReturns }}) {
+	params, err := json.Marshal(struct {
+    {{- range $arg := $method.Args }}
+			{{- if not (eq $arg.Type "[]byte") }}
+      {{ $arg.Name | ToPascalCase }} {{ $arg.Type }} `json:"{{ $arg.Name | ToCamelCase }}"`
+			{{- end }}
+    {{- end }}
+	}{
+    {{- range $arg := $method.Args }}
+			{{- if not (eq $arg.Type "[]byte") }}
+      {{ $arg.Name | ToPascalCase }}: {{ $arg.Name | ToCamelCase }},
+			{{- end }}
+    {{- end }}
+	})
+	if err != nil {
+		return
+	}
+
+	req := &Request{
+		Method:      "{{ $service.Name }}.{{ $method.Name }}",
+		Params:      params,
+		ContentType: "multipart/form-data",
+		Readers:     make([]io.Reader, 0),
+		Filenames:   make([]string, 0),
+	}
+
+	for {
+		var filename string
+		var r io.Reader
+
+		filename, r, err = file()
+		if errors.Is(err, io.EOF) {
+			break
+		} else if err != nil {
+			return
+		}
+
+		req.Filenames = append(req.Filenames, filename)
+		req.Readers = append(req.Readers, r)
+	}
+
+	body, _ := s.caller.Call(ctx, req)
+	err = parseCallerResponse(body{{ $method.Returns | ToCallerResponse }})
+	return
+}
+
+{{ else if eq $method.Type 4 }}
+
+func (s *{{ $service.Name | ToCamelCase }}Client) {{ $method.Name }}({{ $method.Args | ToMethodArgs }}) ({{ $method.Returns | ToMethodReturns }}) {
+	params, err := json.Marshal(struct {
+    {{- range $arg := $method.Args }}
+			{{- if not (eq $arg.Type "[]byte") }}
+      {{ $arg.Name | ToPascalCase }} {{ $arg.Type }} `json:"{{ $arg.Name | ToCamelCase }}"`
+			{{- end }}
+    {{- end }}
+	}{
+    {{- range $arg := $method.Args }}
+			{{- if not (eq $arg.Type "[]byte") }}
+      {{ $arg.Name | ToPascalCase }}: {{ $arg.Name | ToCamelCase }},
+			{{- end }}
+    {{- end }}
+	})
+	if err != nil {
+		errs = chanWithError(err)
+		return
+	}
+
+	req := &Request{
+		Method:       "{{ $service.Name }}.{{ $method.Name }}",
+		Params:      params,
+		ContentType: "multipart/form-data",
+		Readers:     make([]io.Reader, 0),
+		Filenames:   make([]string, 0),
+	}
+
+	for {
+		var filename string
+		var r io.Reader
+
+		filename, r, err = files()
+		if errors.Is(err, io.EOF) {
+			break
+		} else if err != nil {
+			return
+		}
+
+		req.Filenames = append(req.Filenames, filename)
+		req.Readers = append(req.Readers, r)
+	}
+
+	body, contentType := s.caller.Call(ctx, req)
+	if contentType == "application/json" {
+		err = parseCallerResponse(body)
+		return
+	}
+
+	return readSSE[{{ $method.Returns | ToMethodReturnTypeIndex 0 }}](ctx, body)
+}
+
+{{ else if eq $method.Type 5 }}
+
+func (s *{{ $service.Name | ToCamelCase }}Client) {{ $method.Name }}({{ $method.Args | ToMethodArgs }}) ({{ $method.Returns | ToMethodReturns }}) {
+	params, err := json.Marshal(struct {
+    {{- range $arg := $method.Args }}
+			{{- if not (eq $arg.Type "[]byte") }}
+      {{ $arg.Name | ToPascalCase }} {{ $arg.Type }} `json:"{{ $arg.Name | ToCamelCase }}"`
+			{{- end }}
+    {{- end }}
+	}{
+    {{- range $arg := $method.Args }}
+			{{- if not (eq $arg.Type "[]byte") }}
+      {{ $arg.Name | ToPascalCase }}: {{ $arg.Name | ToCamelCase }},
+			{{- end }}
+    {{- end }}
+	})
+	if err != nil {
+		return
+	}
+
+	req := &Request{
+		Method:       "{{ $service.Name }}.{{ $method.Name }}",
+		Params:      params,
+		ContentType: "multipart/form-data",
+		Readers:     make([]io.Reader, 0),
+		Filenames:   make([]string, 0),
+	}
+
+	for {
+		var filename string
+		var r io.Reader
+
+		filename, r, err = files()
+		if errors.Is(err, io.EOF) {
+			break
+		} else if err != nil {
+			return
+		}
+
+		req.Filenames = append(req.Filenames, filename)
+		req.Readers = append(req.Readers, r)
+	}
+
+	body, contentType := s.caller.Call(ctx, req)
+	if contentType == "application/json" {
+		err = parseCallerResponse(body)
+		return
+	}
+
+	return body, nil
+}
+
+{{ end }}
+
+{{ end }}
+
+{{ end }}
+{{ end }}

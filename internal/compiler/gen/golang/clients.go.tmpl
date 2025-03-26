@@ -1,0 +1,12 @@
+{{- define "clients" }}
+//
+// Create Http Service Clients ({{ .HttpServices | Length }})
+//
+{{ template "clients.gen" .HttpServices }}
+
+//
+// Create Rpc Service Client ({{ .RpcServices | Length }})
+//
+{{ template "clients.gen" .RpcServices }}
+
+{{- end }}

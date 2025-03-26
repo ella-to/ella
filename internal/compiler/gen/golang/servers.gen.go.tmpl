@@ -1,9 +1,9 @@
 {{- define "servers.gen" }}
 {{ range $service := . -}}
-func Register{{ $service.Name }}Server(r Registererer, srv {{ $service.Name }}) {
+func Register{{ $service.Name }}Server(r HandleRegistry, srv {{ $service.Name }}) {
 	{{- range $method := $service.Methods }}
 	{{- if eq $method.Type 0 }}
-	r.Register(
+	r.RegisterHandle(
 		"{{ $service.Name }}.{{ $method.Name }}",
 		{{ $method | GetHandleMethodName }}(
 			func(
@@ -29,7 +29,7 @@ func Register{{ $service.Name }}Server(r Registererer, srv {{ $service.Name }}) 
 		),
 	)
 	{{- else if eq $method.Type 1 }}
-	r.Register(
+	r.RegisterHandle(
 		"{{ $service.Name }}.{{ $method.Name }}",
 		{{ $method | GetHandleMethodName }}(
 			func(
@@ -42,8 +42,8 @@ func Register{{ $service.Name }}Server(r Registererer, srv {{ $service.Name }}) 
 					{{- end }}
 				},
 			) (
-				<-chan {{ $method.Returns | ToMethodReturnStreamType}},
-				error,
+				<-chan {{ $method.Returns | ToMethodReturnTypeIndex 0 }},
+				<-chan error,
 			) {
 				return srv.{{ $method.Name }}(
 					ctx, 
@@ -55,7 +55,7 @@ func Register{{ $service.Name }}Server(r Registererer, srv {{ $service.Name }}) 
 		),
 	)	
 	{{- else if eq $method.Type 2 }}
-	r.Register(
+	r.RegisterHandle(
 		"{{ $service.Name }}.{{ $method.Name }}",
 		{{ $method | GetHandleMethodName }}(
 			func(
@@ -81,7 +81,7 @@ func Register{{ $service.Name }}Server(r Registererer, srv {{ $service.Name }}) 
 		),
 	)
 	{{- else if eq $method.Type 3 }}
-	r.Register(
+	r.RegisterHandle(
 		"{{ $service.Name }}.{{ $method.Name }}",
 		{{ $method | GetHandleMethodName }}(
 			func(
@@ -121,7 +121,7 @@ func Register{{ $service.Name }}Server(r Registererer, srv {{ $service.Name }}) 
 		),
 	)
 	{{- else if eq $method.Type 4 }}
-	r.Register(
+	r.RegisterHandle(
 		"{{ $service.Name }}.{{ $method.Name }}",
 		{{ $method | GetHandleMethodName }}(
 			func(
@@ -139,8 +139,8 @@ func Register{{ $service.Name }}Server(r Registererer, srv {{ $service.Name }}) 
 				{{- end }}
 				{{- end }}
 			) (
-				<-chan {{ $method.Returns | ToMethodReturnStreamType}},
-				error,
+				<-chan {{ $method.Returns | ToMethodReturnTypeIndex 0}},
+				<-chan error,
 			) {
 				return srv.{{ $method.Name }}(
 					ctx, 
@@ -159,7 +159,7 @@ func Register{{ $service.Name }}Server(r Registererer, srv {{ $service.Name }}) 
 		),
 	)	
 	{{- else if eq $method.Type 5 }}
-	r.Register(
+	r.RegisterHandle(
 		"{{ $service.Name }}.{{ $method.Name }}",
 		{{ $method | GetHandleMethodName }}(
 			func(

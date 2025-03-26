@@ -200,6 +200,8 @@ func generateGo(pkg, output string, doc *ast.Document) error {
 			"ToMethodReturns": func(returns []GoMethodReturn) string {
 				var sb strings.Builder
 
+				isChannel := false
+
 				for i, ret := range returns {
 					if i > 0 {
 						sb.WriteString(", ")
@@ -211,6 +213,7 @@ func generateGo(pkg, output string, doc *ast.Document) error {
 					if ret.Stream && ret.Type != "[]byte" {
 						sb.WriteString("<-chan ")
 						sb.WriteString(ret.Type)
+						isChannel = true
 					} else if ret.Stream && ret.Type == "[]byte" {
 						sb.WriteString("io.Reader")
 					} else {
@@ -222,12 +225,16 @@ func generateGo(pkg, output string, doc *ast.Document) error {
 					sb.WriteString(", ")
 				}
 
-				sb.WriteString("err error")
+				if isChannel {
+					sb.WriteString("errs <-chan error")
+				} else {
+					sb.WriteString("err error")
+				}
 
 				return sb.String()
 			},
-			"ToMethodReturnStreamType": func(returns []GoMethodReturn) string {
-				return returns[0].Type
+			"ToMethodReturnTypeIndex": func(idx int, returns []GoMethodReturn) string {
+				return returns[idx].Type
 			},
 			"HasOption": func(options []GoMethodOption, name string) bool {
 				for _, opt := range options {
@@ -236,6 +243,18 @@ func generateGo(pkg, output string, doc *ast.Document) error {
 					}
 				}
 				return false
+			},
+			"ToCallerResponse": func(returns []GoMethodReturn) string {
+				var sb strings.Builder
+
+				for _, ret := range returns {
+					if ret.Type != "error" {
+						sb.WriteString(", ")
+						sb.WriteString(ret.Name)
+					}
+				}
+
+				return sb.String()
 			},
 		}).
 		ParseFS(golangTemplateFiles, "golang/*.go.tmpl")

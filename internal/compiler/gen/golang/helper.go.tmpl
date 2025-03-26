@@ -1,376 +1,91 @@
 {{- define "helpers" }}
+//
+// Ella's helper functions
+//
 
 type Request struct {
-	Id          string            `json:"id"`
-	Method      string            `json:"method"`
-	Params      json.RawMessage   `json:"params"`
-	ContentType string            `json:"-"`
-	Files       []*multipart.Part `json:"-"`
-	Boundary    string            `json:"-"`
-}
-
-type Sender interface {
-	Send(ctx context.Context, req *Request, resp io.Writer)
-}
-
-type SenderFunc func(ctx context.Context, req *Request, resp io.Writer)
-
-var _ Sender = (*SenderFunc)(nil)
-
-func (f SenderFunc) Send(ctx context.Context, req *Request, resp io.Writer) {
-	f(ctx, req, resp)
-}
-
-type Registererer interface {
-	Register(name string, sender Sender)
+	Id          string          `json:"id"`
+	Method      string          `json:"method"`
+	Params      json.RawMessage `json:"params"`
+	ContentType string          `json:"-"`
+	Readers     []io.Reader     `json:"-"`
+	Filenames   []string        `json:"-"`
+	Boundary    string          `json:"-"`
 }
 
 //
+// Caller
+//
 
-type Registry struct {
-	senders map[string]Sender
+type Caller interface {
+	Call(ctx context.Context, req *Request) (body io.Reader, contentType string)
+}
+
+type CallerFunc func(ctx context.Context, req *Request) (body io.Reader, contentType string)
+
+var _ Caller = (*CallerFunc)(nil)
+
+func (f CallerFunc) Call(ctx context.Context, req *Request) (body io.Reader, contentType string) {
+	return f(ctx, req)
+}
+
+//
+// Handler
+//
+
+type Handler interface {
+	Handle(ctx context.Context, req *Request, resp io.Writer)
+}
+
+type HandlerFunc func(ctx context.Context, req *Request, resp io.Writer)
+
+var _ Handler = (*HandlerFunc)(nil)
+
+func (f HandlerFunc) Handle(ctx context.Context, req *Request, resp io.Writer) {
+	f(ctx, req, resp)
+}
+
+//
+// HandleRegistry
+//
+
+type HandleRegistry interface {
+	RegisterHandle(name string, handler Handler)
+}
+
+//
+// MemoryHandleRegistry
+//
+
+type MemoryHandleRegistry struct {
+	handlers map[string]Handler
 }
 
 var (
-	_ Registererer = (*Registry)(nil)
-	_ Sender       = (*Registry)(nil)
+	_ HandleRegistry = (*MemoryHandleRegistry)(nil)
+	_ Handler        = (*MemoryHandleRegistry)(nil)
 )
 
-func (r *Registry) Register(name string, sender Sender) {
-	r.senders[name] = sender
+func (r *MemoryHandleRegistry) RegisterHandle(name string, sender Handler) {
+	r.handlers[name] = sender
 }
 
-func (r *Registry) Send(ctx context.Context, req *Request, resp io.Writer) {
-	sender, ok := r.senders[req.Method]
+func (r *MemoryHandleRegistry) Handle(ctx context.Context, req *Request, resp io.Writer) {
+	handler, ok := r.handlers[req.Method]
 	if !ok {
-		writeError(resp, &Error{
+		writeJsonError(resp, &Error{
 			Code:    0,
 			Message: "method not found",
 		})
 		return
 	}
-	sender.Send(ctx, req, resp)
+	handler.Handle(ctx, req, resp)
 }
 
-func parseParams[A any](r io.Reader) (a A, err error) {
-	err = json.NewDecoder(r).Decode(&a)
-	return
-}
-
-{{ range $size, $_ := .Json2Json }}
-func handleJsonToJson{{ $size }}[{{ GenArgsGenerics $size }}](fn func(context.Context, A) ({{ GenReturnsGenerics $size }})) Sender {
-	return SenderFunc(func(ctx context.Context, req *Request, resp io.Writer) {
-		params, err := parseParams[A](bytes.NewReader(req.Params))
-		if err != nil {
-			writeError(resp, err)
-			return
-		}
-
-		writeResults(resp)(fn(ctx, params))
-	})
-}
-{{ end }}
-
-{{ if .Json2Binary }}
-func handleJsonToBinary[A any](fn func(context.Context, A) (io.Reader, error)) Sender {
-	return SenderFunc(func(ctx context.Context, req *Request, resp io.Writer) {
-		params, err := parseParams[A](bytes.NewReader(req.Params))
-		if err != nil {
-			writeError(resp, err)
-			return
-		}
-
-		r, err := fn(ctx, params)
-		if err != nil {
-			writeError(resp, err)
-			return
-		}
-
-		if w, ok := resp.(http.ResponseWriter); ok {
-			w.WriteHeader(http.StatusOK)
-			// TODO: change the content type later
-			w.Header().Set("Content-Type", "application/octet-stream")
-		}
-
-		io.Copy(resp, r)
-	})
-}
-{{ end }}
-
-{{ if .Json2SSE }}
-func handleJsonToSSE[A, R any](fn func(context.Context, A) (<-chan R, error)) Sender {
-	return SenderFunc(func(ctx context.Context, req *Request, resp io.Writer) {
-		var err error
-
-		params, err := parseParams[A](bytes.NewReader(req.Params))
-		if err != nil {
-			writeError(resp, err)
-			return
-		}
-
-		ch, err := fn(ctx, params)
-		if err != nil {
-			writeError(resp, err)
-			return
-		}
-
-		streamEvents(ch, resp)
-	})
-}
-{{ end }}
-
-{{ range $size, $_ := .Binary2Json }}
-func handleBinaryToJson{{ $size }}[{{ GenArgsGenerics $size }}](fn func(context.Context, A, func() (string, io.Reader, error)) ({{ GenReturnsGenerics $size }})) Sender {
-	return SenderFunc(func(ctx context.Context, req *Request, resp io.Writer) {
-		params, err := parseParams[A](bytes.NewReader(req.Params))
-		if err != nil {
-			writeError(resp, err)
-			return
-		}
-
-		idx := 0
-		writeResults(resp)(fn(ctx, params, func() (string, io.Reader, error) {
-			if idx >= len(req.Files) {
-				return "", nil, io.EOF
-			}
-
-			part := req.Files[idx]
-			idx++
-
-			return part.FileName(), part, nil
-		}))
-	})
-}
-{{ end }}
-
-{{ if .Binary2Binary }}
-func handleBinaryToBinary[A any](fn func(context.Context, A, func() (string, io.Reader, error)) (io.Reader, error)) Sender {
-	return SenderFunc(func(ctx context.Context, req *Request, resp io.Writer) {
-		params, err := parseParams[A](bytes.NewReader(req.Params))
-		if err != nil {
-			writeError(resp, err)
-			return
-		}
-
-		idx := 0
-		r, err := fn(ctx, params, func() (string, io.Reader, error) {
-			if idx >= len(req.Files) {
-				return "", nil, io.EOF
-			}
-
-			part := req.Files[idx]
-			idx++
-
-			return part.FileName(), part, nil
-		})
-		if err != nil {
-			writeError(resp, err)
-			return
-		}
-
-		if w, ok := resp.(http.ResponseWriter); ok {
-			w.WriteHeader(http.StatusOK)
-			// TODO: change the content type later
-			w.Header().Set("Content-Type", "application/octet-stream")
-		}
-
-		io.Copy(resp, r)
-	})
-}
-{{ end }}
-
-{{ if .Binary2SSE }}
-func handleBinaryToSSE[A, R any](fn func(context.Context, A, func() (string, io.Reader, error)) (<-chan R, error)) Sender {
-	return SenderFunc(func(ctx context.Context, req *Request, resp io.Writer) {
-		var err error
-
-		params, err := parseParams[A](bytes.NewReader(req.Params))
-		if err != nil {
-			return
-		}
-
-		idx := 0
-		ch, err := fn(ctx, params, func() (string, io.Reader, error) {
-			if idx >= len(req.Files) {
-				return "", nil, io.EOF
-			}
-
-			part := req.Files[idx]
-			idx++
-
-			return part.FileName(), part, nil
-		})
-		if err != nil {
-			return
-		}
-
-		streamEvents(ch, resp)
-	})
-}
-{{ end }}
-
-{{ if or .Json2SSE .Binary2SSE }}
-func streamEvents[T any](ch <-chan T, resp io.Writer) {
-	var id int64
-	pusher, err := sse.NewPusher(resp, 500*time.Millisecond)
-	if err != nil {
-		writeError(resp, err)
-		return
+func NewMemoryHandleRegistry() *MemoryHandleRegistry {
+	return &MemoryHandleRegistry{
+		handlers: make(map[string]Handler),
 	}
-
-	defer func() {
-		pusher.Close()
-		id++
-
-		if err != nil {
-			var sb strings.Builder
-			writeError(&sb, err)
-			pusher.Push(sse.NewMessage(fmt.Sprintf("%d", id), "error", sb.String()))
-			id++
-		}
-
-		pusher.Push(sse.NewMessage(fmt.Sprintf("%d", id), "end", ""))
-	}()
-
-	var buffer bytes.Buffer
-
-	for e := range ch {
-		id++
-		buffer.Reset()
-		if err := json.NewEncoder(&buffer).Encode(e); err != nil {
-			return
-		}
-
-		if err := pusher.Push(sse.NewMessage(fmt.Sprintf("%d", id), "data", buffer.String())); err != nil {
-			return
-		}
-	}
-}
-{{ end }}
-
-func writeError(resp io.Writer, err error) {
-	switch e := err.(type) {
-	case *Error:
-		{
-			json.NewEncoder(resp).Encode(e)
-		}
-	default:
-		writeError(resp, &Error{
-			Code:    0,
-			Message: "something unknown happens",
-			Cause:   err,
-		})
-	}
-}
-
-func writeResults(out io.Writer) func(...any) {
-	return func(rets ...any) {
-		w, isHttpWriter := out.(http.ResponseWriter)
-
-		if isHttpWriter {
-			w.Header().Set("Content-Type", "application/json")
-		}
-
-		if len(rets) > 0 && rets[len(rets)-1] != nil {
-			if isHttpWriter {
-				w.WriteHeader(http.StatusExpectationFailed)
-			}
-			writeError(out, rets[len(rets)-1].(error))
-		}
-
-		if isHttpWriter {
-			w.WriteHeader(http.StatusOK)
-		}
-
-		json.NewEncoder(out).Encode(struct {
-			Result any `json:"result"`
-		}{
-			Result: rets,
-		})
-	}
-}
-
-func NewHttpHandler(srv Sender) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		req, err := parseRequest(r.Body, r.Header.Get("Content-Type"))
-		if err != nil {
-			writeError(w, err)
-			return
-		}
-
-		srv.Send(r.Context(), req, w)
-	})
-}
-
-func parseRequest(r io.Reader, contentType string) (*Request, error) {
-	req := new(Request)
-
-	switch contentType {
-	case "application/json":
-		{
-			if err := json.NewDecoder(r).Decode(req); err != nil {
-				return nil, err
-			}
-		}
-	case "multipart/form-data":
-		{
-			boundary := strings.TrimPrefix(contentType, "multipart/form-data; boundary=")
-			if boundary == "" {
-				return nil, errors.New("missing boundary")
-			}
-			req.Boundary = boundary
-
-			reader := multipart.NewReader(r, boundary)
-
-			for {
-				part, err := reader.NextPart()
-				if errors.Is(err, io.EOF) {
-					break
-				} else if err != nil {
-					return nil, err
-				}
-
-				switch part.FormName() {
-				case "id":
-					{
-						data, err := io.ReadAll(part)
-						if err != nil {
-							return nil, fmt.Errorf("failed to read multipart id: %w", err)
-						}
-						req.Id = string(data)
-					}
-				case "method":
-					{
-						data, err := io.ReadAll(part)
-						if err != nil {
-							return nil, fmt.Errorf("failed to read multipart method: %w", err)
-						}
-						req.Method = string(data)
-					}
-				case "params":
-					{
-						data, err := io.ReadAll(part)
-						if err != nil {
-							return nil, fmt.Errorf("failed to read multipart params: %w", err)
-						}
-						req.Params = data
-					}
-				case "file":
-					{
-						req.Files = append(req.Files, part)
-					}
-				default:
-					{
-						return nil, fmt.Errorf("unknown multipart field: %s", part.FormName())
-					}
-				}
-			}
-		}
-	}
-
-	req.ContentType = contentType
-
-	return req, nil
 }
 
 //
@@ -461,6 +176,574 @@ func newError(code int64, format string, args ...any) *Error {
 		Code:    code,
 		Message: fmt.Sprintf(format, args...),
 	}
+}
+
+//
+// Http Client Helpers
+//
+
+func parseCallerResponse(r io.Reader, ptrs ...any) (err error) {
+	resp := struct {
+		Result []json.RawMessage `json:"result"`
+		Error  *Error            `json:"error,omitempty"`
+	}{}
+
+	if err = json.NewDecoder(r).Decode(&resp); err != nil {
+		return
+	}
+
+	if resp.Error != nil {
+		return resp.Error
+	}
+
+	if len(ptrs) != len(resp.Result) {
+		err = fmt.Errorf("unexpected number of results: %d, got: %d", len(resp.Result), len(ptrs))
+		return
+	}
+
+	for i, result := range resp.Result {
+		if err = json.Unmarshal(result, ptrs[i]); err != nil {
+			return
+		}
+	}
+
+	return nil
+}
+
+func NewHttpClient(endpoint string, client *http.Client) Caller {
+	if client == nil {
+		client = http.DefaultClient
+	}
+
+	return CallerFunc(func(ctx context.Context, req *Request) (io.Reader, string) {
+		var err error
+		var r io.Reader
+		var contentType string
+
+		switch req.ContentType {
+		case "application/json":
+			{
+				pr, pw := io.Pipe()
+				r = pr
+
+				go func() {
+					err = json.NewEncoder(pw).Encode(req)
+					if err != nil {
+						pw.CloseWithError(err)
+						return
+					}
+					pw.Close()
+				}()
+
+				contentType = "application/json"
+			}
+		case "multipart/form-data":
+			{
+				if req.Boundary == "" {
+					req.Boundary = getRandomBoundary()
+				}
+
+				contentType = "multipart/form-data; boundary=" + req.Boundary
+
+				pr, pw := io.Pipe()
+				r = pr
+
+				go func() {
+					var part io.Writer
+
+					mw := multipart.NewWriter(pw)
+
+					defer func() {
+						mw.Close()
+						if err != nil {
+							pw.CloseWithError(err)
+						} else {
+							pw.Close()
+						}
+					}()
+
+					err = mw.SetBoundary(req.Boundary)
+					if err != nil {
+						return
+					}
+
+					part, err = mw.CreateFormField("id")
+					if err != nil {
+						return
+					}
+
+					_, err = io.Copy(part, strings.NewReader(req.Id))
+					if err != nil {
+						return
+					}
+
+					part, err = mw.CreateFormField("method")
+					if err != nil {
+						return
+					}
+
+					_, err = io.Copy(part, strings.NewReader(req.Method))
+					if err != nil {
+						return
+					}
+
+					part, err = mw.CreateFormField("params")
+					if err != nil {
+						return
+					}
+
+					_, err = io.Copy(part, bytes.NewReader(req.Params))
+					if err != nil {
+						return
+					}
+
+					for i, r := range req.Readers {
+						part, err = mw.CreateFormFile("file", req.Filenames[i])
+						if err != nil {
+							return
+						}
+
+						_, err = io.Copy(part, r)
+						if err != nil {
+							return
+						}
+					}
+				}()
+			}
+		}
+
+		httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, r)
+		if err != nil {
+			return errorJsonReader(err), "application/json"
+		}
+
+		httpReq.Header.Set("Content-Type", contentType)
+
+		httpResp, err := http.DefaultClient.Do(httpReq)
+		if err != nil {
+			return errorJsonReader(err), "application/json"
+		}
+
+		if httpResp.StatusCode != http.StatusOK {
+			return httpReq.Body, "application/json"
+		}
+
+		return httpReq.Body, httpResp.Header.Get("Content-Type")
+	})
+}
+
+func getRandomBoundary() string {
+	var buf [30]byte
+	_, err := io.ReadFull(rand.Reader, buf[:])
+	if err != nil {
+		panic(err)
+	}
+	return fmt.Sprintf("%x", buf[:])
+}
+
+//
+// Http Server Helpers
+//
+
+{{ range $size, $_ := .Json2Json }}
+func handleJsonToJson{{ $size }}[{{ GenArgsGenerics $size }}](fn func(context.Context, A) ({{ GenReturnsGenerics $size }})) Handler {
+	return HandlerFunc(func(ctx context.Context, req *Request, resp io.Writer) {
+		params, err := parseParams[A](bytes.NewReader(req.Params))
+		if err != nil {
+			writeJsonError(resp, err)
+			return
+		}
+
+		writeJsonResults(resp)(fn(ctx, params))
+	})
+}
+{{ end }}
+
+{{ range $size, $_ := .Binary2Json }}
+func handleBinaryToJson{{ $size }}[{{ GenArgsGenerics $size }}](fn func(context.Context, A, func() (string, io.Reader, error)) ({{ GenReturnsGenerics $size }})) Handler {
+	return HandlerFunc(func(ctx context.Context, req *Request, resp io.Writer) {
+		params, err := parseParams[A](bytes.NewReader(req.Params))
+		if err != nil {
+			writeJsonError(resp, err)
+			return
+		}
+
+		idx := 0
+		writeJsonResults(resp)(fn(ctx, params, func() (string, io.Reader, error) {
+			defer func() {
+				idx++
+			}()
+
+			if idx >= len(req.Readers) {
+				return "", nil, io.EOF
+			}
+
+			return req.Filenames[idx], req.Readers[idx], nil
+		}))
+	})
+}
+{{ end }}
+
+{{ if .Json2Binary }}
+func handleJsonToBinary[A any](fn func(context.Context, A) (io.Reader, error)) Handler {
+	return HandlerFunc(func(ctx context.Context, req *Request, resp io.Writer) {
+		params, err := parseParams[A](bytes.NewReader(req.Params))
+		if err != nil {
+			writeJsonError(resp, err)
+			return
+		}
+
+		r, err := fn(ctx, params)
+		if err != nil {
+			writeJsonError(resp, err)
+			return
+		}
+
+		if w, ok := resp.(http.ResponseWriter); ok {
+			w.WriteHeader(http.StatusOK)
+			// TODO: change the content type later
+			w.Header().Set("Content-Type", "application/octet-stream")
+		}
+
+		io.Copy(resp, r)
+	})
+}
+{{ end }}
+
+{{ if .Json2SSE }}
+func handleJsonToSSE[A, R any](fn func(context.Context, A) (<-chan R, <-chan error)) Handler {
+	return HandlerFunc(func(ctx context.Context, req *Request, resp io.Writer) {
+		var err error
+
+		params, err := parseParams[A](bytes.NewReader(req.Params))
+		if err != nil {
+			writeJsonError(resp, err)
+			return
+		}
+
+		ch, errs := fn(ctx, params)
+		if err != nil {
+			writeJsonError(resp, err)
+			return
+		}
+
+		writeSSE(ch, errs, resp)
+	})
+}
+{{ end }}
+
+{{ if .Binary2Binary }}
+func handleBinaryToBinary[A any](fn func(context.Context, A, func() (string, io.Reader, error)) (io.Reader, error)) Handler {
+	return HandlerFunc(func(ctx context.Context, req *Request, resp io.Writer) {
+		params, err := parseParams[A](bytes.NewReader(req.Params))
+		if err != nil {
+			writeJsonError(resp, err)
+			return
+		}
+
+		idx := 0
+		r, err := fn(ctx, params, func() (string, io.Reader, error) {
+			defer func() {
+				idx++
+			}()
+
+			if idx >= len(req.Readers) {
+				return "", nil, io.EOF
+			}
+
+			return req.Filenames[idx], req.Readers[idx], nil
+		})
+		if err != nil {
+			writeJsonError(resp, err)
+			return
+		}
+
+		if w, ok := resp.(http.ResponseWriter); ok {
+			w.WriteHeader(http.StatusOK)
+			// TODO: change the content type later
+			w.Header().Set("Content-Type", "application/octet-stream")
+		}
+
+		io.Copy(resp, r)
+	})
+}
+{{ end }}
+
+{{ if .Binary2SSE }}
+func handleBinaryToSSE[A, R any](fn func(context.Context, A, func() (string, io.Reader, error)) (<-chan R, <-chan error)) Handler {
+	return HandlerFunc(func(ctx context.Context, req *Request, resp io.Writer) {
+		var err error
+
+		params, err := parseParams[A](bytes.NewReader(req.Params))
+		if err != nil {
+			errs := make(chan error, 1)
+			errs <- err
+			return
+		}
+
+		idx := 0
+		ch, errs := fn(ctx, params, func() (string, io.Reader, error) {
+			defer func() {
+				idx++
+			}()
+
+			if idx >= len(req.Readers) {
+				return "", nil, io.EOF
+			}
+
+			return req.Filenames[idx], req.Readers[idx], nil
+		})
+		if err != nil {
+			return
+		}
+
+		writeSSE(ch, errs, resp)
+	})
+}
+{{ end }}
+
+func parseHandlerRequest(r io.Reader, contentType string) (*Request, error) {
+	req := new(Request)
+
+	switch contentType {
+	case "application/json":
+		{
+			if err := json.NewDecoder(r).Decode(req); err != nil {
+				return nil, err
+			}
+		}
+	case "multipart/form-data":
+		{
+			boundary := strings.TrimPrefix(contentType, "multipart/form-data; boundary=")
+			if boundary == "" {
+				return nil, errors.New("missing boundary")
+			}
+			req.Boundary = boundary
+
+			reader := multipart.NewReader(r, boundary)
+
+			for {
+				part, err := reader.NextPart()
+				if errors.Is(err, io.EOF) {
+					break
+				} else if err != nil {
+					return nil, err
+				}
+
+				switch part.FormName() {
+				case "id":
+					{
+						data, err := io.ReadAll(part)
+						if err != nil {
+							return nil, fmt.Errorf("failed to read multipart id: %w", err)
+						}
+						req.Id = string(data)
+					}
+				case "method":
+					{
+						data, err := io.ReadAll(part)
+						if err != nil {
+							return nil, fmt.Errorf("failed to read multipart method: %w", err)
+						}
+						req.Method = string(data)
+					}
+				case "params":
+					{
+						data, err := io.ReadAll(part)
+						if err != nil {
+							return nil, fmt.Errorf("failed to read multipart params: %w", err)
+						}
+						req.Params = data
+					}
+				case "file":
+					{
+						req.Readers = append(req.Readers, part)
+						req.Filenames = append(req.Filenames, part.FileName())
+					}
+				default:
+					{
+						return nil, fmt.Errorf("unknown multipart field: %s", part.FormName())
+					}
+				}
+			}
+		}
+	}
+
+	req.ContentType = contentType
+
+	return req, nil
+}
+
+func NewHttpHandler(srv Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		req, err := parseHandlerRequest(r.Body, r.Header.Get("Content-Type"))
+		if err != nil {
+			writeJsonError(w, err)
+			return
+		}
+
+		srv.Handle(r.Context(), req, w)
+	})
+}
+
+func parseParams[A any](r io.Reader) (a A, err error) {
+	err = json.NewDecoder(r).Decode(&a)
+	return
+}
+
+func readSSE[R any](ctx context.Context, r io.Reader) (<-chan R, <-chan error) {
+	recv := sse.NewReceiver(r)
+	results := make(chan R, 1)
+	errors := make(chan error, 1)
+
+	go func() {
+		defer close(results)
+		defer close(errors)
+
+		for {
+			msg, err := recv.Receive(ctx)
+			if err != nil {
+				return
+			}
+
+			switch msg.Event {
+			case "data":
+				{
+					var result R
+					if err := json.Unmarshal([]byte(msg.Data), &result); err != nil {
+						errors <- err
+						continue
+					}
+					results <- result
+				}
+			case "error":
+				customErr := new(Error)
+				if err := json.NewDecoder(strings.NewReader(msg.Data)).Decode(customErr); err != nil {
+					errors <- err
+					continue
+				}
+				errors <- customErr
+				continue
+			case "end":
+				return
+			}
+		}
+	}()
+
+	return results, errors
+}
+
+{{ if or .Json2SSE .Binary2SSE }}
+func writeSSE[T any](ch <-chan T, errs <-chan error, resp io.Writer) {
+	var id int64
+	pusher, err := sse.NewPusher(resp, 500*time.Millisecond)
+	if err != nil {
+		writeJsonError(resp, err)
+		return
+	}
+
+	defer func() {
+		pusher.Close()
+		id++
+
+		if err != nil {
+			var sb strings.Builder
+			writeJsonError(&sb, err)
+			pusher.Push(sse.NewMessage(fmt.Sprintf("%d", id), "error", sb.String()))
+			id++
+		}
+
+		pusher.Push(sse.NewMessage(fmt.Sprintf("%d", id), "end", ""))
+	}()
+
+	var buffer bytes.Buffer
+	var msg *sse.Message
+
+	for {
+		select {
+		case err, ok := <-errs:
+			{
+				if !ok {
+					return
+				}
+
+				id++
+				buffer.Reset()
+				writeJsonError(&buffer, err)
+				msg = sse.NewMessage(fmt.Sprintf("%d", id), "error", buffer.String())
+			}
+		case e, ok := <-ch:
+			{
+				if !ok {
+					return
+				}
+
+				id++
+				buffer.Reset()
+				json.NewEncoder(&buffer).Encode(e)
+				msg = sse.NewMessage(fmt.Sprintf("%d", id), "data", buffer.String())
+			}
+		}
+
+		if err := pusher.Push(msg); err != nil {
+			return
+		}
+	}
+}
+{{ end }}
+
+func errorJsonReader(err error) io.Reader {
+	pr, pw := io.Pipe()
+	go writeJsonError(pw, err)
+	return pr
+}
+
+func writeJsonError(resp io.Writer, err error) {
+	switch e := err.(type) {
+	case *Error:
+		{
+			json.NewEncoder(resp).Encode(e)
+		}
+	default:
+		writeJsonError(resp, &Error{
+			Code:    0,
+			Message: "something unknown happens",
+			Cause:   err,
+		})
+	}
+}
+
+func writeJsonResults(out io.Writer) func(...any) {
+	return func(rets ...any) {
+		w, isHttpWriter := out.(http.ResponseWriter)
+
+		if isHttpWriter {
+			w.Header().Set("Content-Type", "application/json")
+		}
+
+		if len(rets) > 0 && rets[len(rets)-1] != nil {
+			if isHttpWriter {
+				w.WriteHeader(http.StatusExpectationFailed)
+			}
+			writeJsonError(out, rets[len(rets)-1].(error))
+		}
+
+		if isHttpWriter {
+			w.WriteHeader(http.StatusOK)
+		}
+
+		json.NewEncoder(out).Encode(struct {
+			Result any `json:"result"`
+		}{
+			Result: rets,
+		})
+	}
+}
+
+func chanWithError(err error) <-chan error {
+	errs := make(chan error, 1)
+	errs <- err
+	return errs
 }
 
 {{- end }}

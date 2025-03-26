@@ -20,6 +20,6 @@ type {{ $service.Name }} interface {
 	{{ $method.Name }}({{ $method.Args | ToMethodArgs }}) ({{ $method.Returns | ToMethodReturns }})
 	{{- end }}
 }
-{{- end }}
+{{ end }}
 
 {{- end }}
