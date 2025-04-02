@@ -1,0 +1,4 @@
+service HttpSignalService {
+    Send(inbox: string, msg: string)
+    Recv(inbox: string) => (msgs: stream string)
+}

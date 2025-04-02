@@ -1,0 +1,5 @@
+
+
+service HttpEventService {
+    GetRandomValues() => (values: stream string)
+}

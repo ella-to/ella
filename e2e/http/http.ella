@@ -1,0 +1,20 @@
+const Version = "1.0.0"
+
+error ErrAgen { Msg = "age must be greater than 0" }
+
+enum Emotion {
+    _ 
+    Sad
+    Happy
+    Excited
+}
+
+model Person {
+    Name: string
+    Age?: int8
+    Emotion: Emotion
+}
+
+service HttpPeopleService {
+    GetRandom(age: int8) => (person: Person)
+}
