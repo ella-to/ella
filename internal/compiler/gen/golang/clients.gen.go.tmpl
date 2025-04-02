@@ -21,7 +21,7 @@ func (s *{{ $service.Name | ToCamelCase }}Client) {{ $method.Name }}({{ $method.
     {{- end }}
 	})
 	if err != nil {
-		return nil, err
+		return
 	}
 
 	req := &Request{
@@ -29,6 +29,8 @@ func (s *{{ $service.Name | ToCamelCase }}Client) {{ $method.Name }}({{ $method.
 		Params: params,
 		ContentType: "application/json",
 	}
+
+	{{ $method.Returns | InitialReturnValues }}
 
 	body, _ := s.caller.Call(ctx, req)
 	err = parseCallerResponse(body{{ $method.Returns | ToCallerResponse }})
@@ -95,7 +97,9 @@ func (s *{{ $service.Name | ToCamelCase }}Client) {{ $method.Name }}({{ $method.
 		return
 	}
 
-	return body, nil
+	segments := strings.Split(contentType, ";")
+
+	return body, segments[1], segments[0], nil
 }
 
 {{ else if eq $method.Type 3 }}
@@ -122,24 +126,11 @@ func (s *{{ $service.Name | ToCamelCase }}Client) {{ $method.Name }}({{ $method.
 		Method:      "{{ $service.Name }}.{{ $method.Name }}",
 		Params:      params,
 		ContentType: "multipart/form-data",
-		Readers:     make([]io.Reader, 0),
-		Filenames:   make([]string, 0),
 	}
 
-	for {
-		var filename string
-		var r io.Reader
+	req.Files = files
 
-		filename, r, err = file()
-		if errors.Is(err, io.EOF) {
-			break
-		} else if err != nil {
-			return
-		}
-
-		req.Filenames = append(req.Filenames, filename)
-		req.Readers = append(req.Readers, r)
-	}
+	{{ $method.Returns | InitialReturnValues }}
 
 	body, _ := s.caller.Call(ctx, req)
 	err = parseCallerResponse(body{{ $method.Returns | ToCallerResponse }})
@@ -179,7 +170,7 @@ func (s *{{ $service.Name | ToCamelCase }}Client) {{ $method.Name }}({{ $method.
 		var filename string
 		var r io.Reader
 
-		filename, r, err = files()
+		filename, r, err = {{ $method.Args | ToUploadNameArg }}()
 		if errors.Is(err, io.EOF) {
 			break
 		} else if err != nil {
@@ -231,7 +222,7 @@ func (s *{{ $service.Name | ToCamelCase }}Client) {{ $method.Name }}({{ $method.
 		var filename string
 		var r io.Reader
 
-		filename, r, err = files()
+		filename, r, err = {{ $method.Args | ToUploadNameArg }}()
 		if errors.Is(err, io.EOF) {
 			break
 		} else if err != nil {
@@ -248,12 +239,18 @@ func (s *{{ $service.Name | ToCamelCase }}Client) {{ $method.Name }}({{ $method.
 		return
 	}
 
-	return body, nil
+	segments := strings.Split(contentType, ";")
+
+	return body, segments[1], segments[0], nil
 }
 
 {{ end }}
 
 {{ end }}
+
+func Create{{ $service.Name | ToPascalCase }}Client(caller Caller) *{{ $service.Name | ToCamelCase }}Client {
+	return &{{ $service.Name | ToCamelCase }}Client{caller: caller}
+}
 
 {{ end }}
 {{ end }}

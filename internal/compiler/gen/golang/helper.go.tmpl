@@ -4,13 +4,12 @@
 //
 
 type Request struct {
-	Id          string          `json:"id"`
-	Method      string          `json:"method"`
-	Params      json.RawMessage `json:"params"`
-	ContentType string          `json:"-"`
-	Readers     []io.Reader     `json:"-"`
-	Filenames   []string        `json:"-"`
-	Boundary    string          `json:"-"`
+	Id          string                            `json:"id"`
+	Method      string                            `json:"method"`
+	Params      json.RawMessage                   `json:"params"`
+	ContentType string                            `json:"-"`
+	Files       func() (string, io.Reader, error) `json:"-"`
+	Boundary    string                            `json:"-"`
 }
 
 //
@@ -153,20 +152,18 @@ func (e *Error) MarshalJSON() ([]byte, error) {
 
 func (e *Error) UnmarshalJSON(data []byte) error {
 	wrapper := struct {
-		Error json.RawMessage `json:"error"`
+		Code    int64  `json:"code"`
+		Message string `json:"message"`
+		Cause   string `json:"cause,omitempty"`
 	}{}
 
 	if err := json.Unmarshal(data, &wrapper); err != nil {
 		return err
 	}
 
-	if bytes.Index(wrapper.Error, []byte("{")) == 0 {
-		return json.Unmarshal(wrapper.Error, e)
-	}
-
-	e.Message = string(wrapper.Error)
-	e.Code = 0
-	e.Cause = nil
+	e.Message = wrapper.Message
+	e.Code = wrapper.Code
+	e.Cause = errors.New(wrapper.Cause)
 
 	return nil
 }
@@ -297,13 +294,23 @@ func NewHttpClient(endpoint string, client *http.Client) Caller {
 						return
 					}
 
-					for i, r := range req.Readers {
-						part, err = mw.CreateFormFile("file", req.Filenames[i])
+					var filename string
+					var fileReader io.Reader
+
+					for {
+						filename, fileReader, err = req.Files()
+						if errors.Is(err, io.EOF) {
+							break
+						} else if err != nil {
+							return
+						}
+
+						part, err = mw.CreateFormFile("file", filename)
 						if err != nil {
 							return
 						}
 
-						_, err = io.Copy(part, r)
+						_, err = io.Copy(part, fileReader)
 						if err != nil {
 							return
 						}
@@ -325,10 +332,18 @@ func NewHttpClient(endpoint string, client *http.Client) Caller {
 		}
 
 		if httpResp.StatusCode != http.StatusOK {
-			return httpReq.Body, "application/json"
+			return httpResp.Body, "application/json"
 		}
 
-		return httpReq.Body, httpResp.Header.Get("Content-Type")
+		contentDisposition := httpResp.Header.Get("Content-Disposition")
+		if contentDisposition != "" {
+			filename := strings.TrimSuffix(strings.TrimPrefix(contentDisposition, `attachment; filename="`), `"`)
+			contentType = httpResp.Header.Get("Content-Type") + ";" + filename
+		} else {
+			contentType = httpResp.Header.Get("Content-Type")
+		}
+
+		return httpResp.Body, contentType
 	})
 }
 
@@ -368,24 +383,13 @@ func handleBinaryToJson{{ $size }}[{{ GenArgsGenerics $size }}](fn func(context.
 			return
 		}
 
-		idx := 0
-		writeJsonResults(resp)(fn(ctx, params, func() (string, io.Reader, error) {
-			defer func() {
-				idx++
-			}()
-
-			if idx >= len(req.Readers) {
-				return "", nil, io.EOF
-			}
-
-			return req.Filenames[idx], req.Readers[idx], nil
-		}))
+		writeJsonResults(resp)(fn(ctx, params, req.Files))
 	})
 }
 {{ end }}
 
 {{ if .Json2Binary }}
-func handleJsonToBinary[A any](fn func(context.Context, A) (io.Reader, error)) Handler {
+func handleJsonToBinary[A any](fn func(context.Context, A) (io.Reader, string, string, error)) Handler {
 	return HandlerFunc(func(ctx context.Context, req *Request, resp io.Writer) {
 		params, err := parseParams[A](bytes.NewReader(req.Params))
 		if err != nil {
@@ -393,16 +397,21 @@ func handleJsonToBinary[A any](fn func(context.Context, A) (io.Reader, error)) H
 			return
 		}
 
-		r, err := fn(ctx, params)
+		r, filename, contentType, err := fn(ctx, params)
 		if err != nil {
 			writeJsonError(resp, err)
 			return
 		}
 
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+
 		if w, ok := resp.(http.ResponseWriter); ok {
+			w.Header().Set("Content-Type", contentType)
+			w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+
 			w.WriteHeader(http.StatusOK)
-			// TODO: change the content type later
-			w.Header().Set("Content-Type", "application/octet-stream")
 		}
 
 		io.Copy(resp, r)
@@ -433,7 +442,7 @@ func handleJsonToSSE[A, R any](fn func(context.Context, A) (<-chan R, <-chan err
 {{ end }}
 
 {{ if .Binary2Binary }}
-func handleBinaryToBinary[A any](fn func(context.Context, A, func() (string, io.Reader, error)) (io.Reader, error)) Handler {
+func handleBinaryToBinary[A any](fn func(context.Context, A, func() (string, io.Reader, error)) (io.Reader, string, string, error)) Handler {
 	return HandlerFunc(func(ctx context.Context, req *Request, resp io.Writer) {
 		params, err := parseParams[A](bytes.NewReader(req.Params))
 		if err != nil {
@@ -442,7 +451,7 @@ func handleBinaryToBinary[A any](fn func(context.Context, A, func() (string, io.
 		}
 
 		idx := 0
-		r, err := fn(ctx, params, func() (string, io.Reader, error) {
+		r, filename, contentType, err := fn(ctx, params, func() (string, io.Reader, error) {
 			defer func() {
 				idx++
 			}()
@@ -458,10 +467,15 @@ func handleBinaryToBinary[A any](fn func(context.Context, A, func() (string, io.
 			return
 		}
 
+		if contentType == "" {
+			contentType = "application/octet-stream"
+		}
+
 		if w, ok := resp.(http.ResponseWriter); ok {
+			w.Header().Set("Content-Type", contentType)
+			w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
+
 			w.WriteHeader(http.StatusOK)
-			// TODO: change the content type later
-			w.Header().Set("Content-Type", "application/octet-stream")
 		}
 
 		io.Copy(resp, r)
@@ -505,67 +519,83 @@ func handleBinaryToSSE[A, R any](fn func(context.Context, A, func() (string, io.
 func parseHandlerRequest(r io.Reader, contentType string) (*Request, error) {
 	req := new(Request)
 
-	switch contentType {
-	case "application/json":
-		{
-			if err := json.NewDecoder(r).Decode(req); err != nil {
+	if contentType == "application/json" {
+		if err := json.NewDecoder(r).Decode(req); err != nil {
+			return nil, err
+		}
+	} else if strings.HasPrefix(contentType, "multipart/form-data") {
+		boundary := strings.TrimPrefix(contentType, "multipart/form-data; boundary=")
+		if boundary == "" {
+			return nil, errors.New("missing boundary")
+		}
+		req.Boundary = boundary
+
+		reader := multipart.NewReader(r, boundary)
+
+		gotMeta := false
+
+		for !gotMeta {
+			part, err := reader.NextPart()
+			if errors.Is(err, io.EOF) {
+				break
+			} else if err != nil {
 				return nil, err
 			}
+
+			switch part.FormName() {
+			case "id":
+				{
+					data, err := io.ReadAll(part)
+					if err != nil {
+						return nil, fmt.Errorf("failed to read multipart id: %w", err)
+					}
+					req.Id = string(data)
+				}
+
+			case "method":
+				{
+					data, err := io.ReadAll(part)
+					if err != nil {
+						return nil, fmt.Errorf("failed to read multipart method: %w", err)
+					}
+					req.Method = string(data)
+				}
+
+			case "params":
+				{
+					data, err := io.ReadAll(part)
+					if err != nil {
+						return nil, fmt.Errorf("failed to read multipart params: %w", err)
+					}
+					req.Params = data
+				}
+				gotMeta = true
+
+			default:
+				{
+					return nil, fmt.Errorf("unknown multipart field: %s", part.FormName())
+				}
+			}
 		}
-	case "multipart/form-data":
-		{
-			boundary := strings.TrimPrefix(contentType, "multipart/form-data; boundary=")
-			if boundary == "" {
-				return nil, errors.New("missing boundary")
+
+		if req.Method == "" {
+			return nil, fmt.Errorf("missing method field in form data")
+		}
+
+		req.Files = func() (string, io.Reader, error) {
+			part, err := reader.NextPart()
+			if errors.Is(err, io.EOF) {
+				return "", nil, io.EOF
+			} else if err != nil {
+				return "", nil, err
 			}
-			req.Boundary = boundary
 
-			reader := multipart.NewReader(r, boundary)
-
-			for {
-				part, err := reader.NextPart()
-				if errors.Is(err, io.EOF) {
-					break
-				} else if err != nil {
-					return nil, err
-				}
-
-				switch part.FormName() {
-				case "id":
-					{
-						data, err := io.ReadAll(part)
-						if err != nil {
-							return nil, fmt.Errorf("failed to read multipart id: %w", err)
-						}
-						req.Id = string(data)
-					}
-				case "method":
-					{
-						data, err := io.ReadAll(part)
-						if err != nil {
-							return nil, fmt.Errorf("failed to read multipart method: %w", err)
-						}
-						req.Method = string(data)
-					}
-				case "params":
-					{
-						data, err := io.ReadAll(part)
-						if err != nil {
-							return nil, fmt.Errorf("failed to read multipart params: %w", err)
-						}
-						req.Params = data
-					}
-				case "file":
-					{
-						req.Readers = append(req.Readers, part)
-						req.Filenames = append(req.Filenames, part.FileName())
-					}
-				default:
-					{
-						return nil, fmt.Errorf("unknown multipart field: %s", part.FormName())
-					}
-				}
+			filename := part.FileName()
+			if filename == "" {
+				return "", nil, fmt.Errorf("missing filename")
 			}
+
+			return filename, part, nil
 		}
 	}
 
@@ -636,7 +666,7 @@ func readSSE[R any](ctx context.Context, r io.Reader) (<-chan R, <-chan error) {
 {{ if or .Json2SSE .Binary2SSE }}
 func writeSSE[T any](ch <-chan T, errs <-chan error, resp io.Writer) {
 	var id int64
-	pusher, err := sse.NewPusher(resp, 500*time.Millisecond)
+	pusher, err := sse.NewPusher(resp, 5 * time.Second)
 	if err != nil {
 		writeJsonError(resp, err)
 		return
@@ -730,6 +760,11 @@ func writeJsonResults(out io.Writer) func(...any) {
 
 		if isHttpWriter {
 			w.WriteHeader(http.StatusOK)
+		}
+
+		if len(rets) > 0 {
+			// remove the last element, as it is an error
+			rets = rets[:len(rets)-1]
 		}
 
 		json.NewEncoder(out).Encode(struct {

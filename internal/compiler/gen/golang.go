@@ -215,7 +215,9 @@ func generateGo(pkg, output string, doc *ast.Document) error {
 						sb.WriteString(ret.Type)
 						isChannel = true
 					} else if ret.Stream && ret.Type == "[]byte" {
-						sb.WriteString("io.Reader")
+						sb.WriteString("io.Reader, ")
+						sb.WriteString(ret.Name + "Filename string, ")
+						sb.WriteString(ret.Name + "ContentType string")
 					} else {
 						sb.WriteString(ret.Type)
 					}
@@ -244,17 +246,67 @@ func generateGo(pkg, output string, doc *ast.Document) error {
 				}
 				return false
 			},
+			"InitialReturnValues": func(returns []GoMethodReturn) string {
+				var sb strings.Builder
+
+				i := 0
+				for _, ret := range returns {
+					if !strings.HasPrefix(ret.Type, "*") {
+						continue
+					}
+
+					if i > 0 {
+						sb.WriteString(", ")
+					}
+
+					sb.WriteString(ret.Name)
+					i++
+				}
+
+				if i > 0 {
+					sb.WriteString(" = ")
+				}
+
+				i = 0
+				for _, ret := range returns {
+					if !strings.HasPrefix(ret.Type, "*") {
+						continue
+					}
+
+					if i > 0 {
+						sb.WriteString(", ")
+					}
+
+					sb.WriteString("new(")
+					sb.WriteString(strings.TrimPrefix(ret.Type, "*"))
+					sb.WriteString(")")
+					i++
+				}
+
+				return sb.String()
+			},
 			"ToCallerResponse": func(returns []GoMethodReturn) string {
 				var sb strings.Builder
 
 				for _, ret := range returns {
 					if ret.Type != "error" {
 						sb.WriteString(", ")
+						if !strings.HasPrefix(ret.Type, "*") {
+							sb.WriteString("&")
+						}
 						sb.WriteString(ret.Name)
 					}
 				}
 
 				return sb.String()
+			},
+			"ToUploadNameArg": func(args []GoMethodArg) string {
+				for _, arg := range args {
+					if arg.Stream && arg.Type == "[]byte" {
+						return arg.Name
+					}
+				}
+				return ""
 			},
 		}).
 		ParseFS(golangTemplateFiles, "golang/*.go.tmpl")
