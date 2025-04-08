@@ -3,10 +3,10 @@ package gen
 import (
 	"embed"
 	"fmt"
-	"html/template"
 	"os"
 	"strconv"
 	"strings"
+	"text/template"
 
 	"ella.to/ella/internal/compiler/ast"
 	"ella.to/ella/internal/compiler/token"
@@ -58,20 +58,22 @@ func generateTypescript(pkg, output string, doc *ast.Document) error {
 	// SERVICES
 
 	type TsArg struct {
-		Name string
-		Type string
+		Name   string
+		Type   string
+		Stream bool
 	}
 
 	type TsReturn struct {
-		Name string
-		Type string
+		Name   string
+		Type   string
+		Stream bool
 	}
 
 	type TsMethod struct {
 		Name        string
 		ServiceName string
-		Type        string // normal, raw, binary, stream, fileupload
-		HttpMethod  string // GET, POST, PUT, DELETE, PATCH, OPTIONS
+		ReqType     string // json, fileupload
+		RespType    string // json, blob, sse
 		Args        []TsArg
 		Returns     []TsReturn
 	}
@@ -157,48 +159,43 @@ func generateTypescript(pkg, output string, doc *ast.Document) error {
 
 					tsMethod.Name = method.Name.Token.Value
 					tsMethod.ServiceName = service.Name.Token.Value
-					tsMethod.Args = filterFunc(mapperFunc(method.Args, func(arg *ast.Arg) TsArg {
-						return TsArg{
-							Name: arg.Name.Token.Value,
-							Type: getTypescriptType(arg.Type),
-						}
-					}), func(ta TsArg) bool {
-						if ta.Type == "fileupload" {
-							tsMethod.Type = "fileupload"
-						}
-
-						return ta.Type != "fileupload"
-					})
-					tsMethod.Returns = mapperFunc(method.Returns, func(ret *ast.Return) TsReturn {
-						typ := getTypescriptType(ret.Type)
-
-						if ret.Stream && typ == "byte[]" {
-							tsMethod.Type = "binary"
-						} else if ret.Stream {
-							tsMethod.Type = "stream"
-						} else if tsMethod.Type != "fileupload" {
-							tsMethod.Type = "normal"
-						}
-
-						return TsReturn{
-							Name: ret.Name.Token.Value,
-							Type: typ,
-						}
-					})
-
-					if tsMethod.Type == "" {
-						for _, opt := range method.Options.List {
-							if opt.Name.Token.Value == "HttpRawControl" {
-								tsMethod.Type = "raw"
-								break
+					tsMethod.Args = mapperFunc(
+						method.Args,
+						func(arg *ast.Arg) TsArg {
+							return TsArg{
+								Name:   arg.Name.Token.Value,
+								Type:   getTypescriptType(arg.Type),
+								Stream: arg.Stream,
 							}
+						},
+					)
+					tsMethod.Returns = mapperFunc(method.Returns, func(ret *ast.Return) TsReturn {
+						return TsReturn{
+							Name:   ret.Name.Token.Value,
+							Type:   getTypescriptType(ret.Type),
+							Stream: ret.Stream,
+						}
+					})
+
+					tsMethod.ReqType = "JSON"
+
+					for _, arg := range tsMethod.Args {
+						if arg.Stream && arg.Type == "[]byte" {
+							tsMethod.ReqType = "FILE_UPLOAD"
+							break
 						}
 					}
 
-					tsMethod.HttpMethod = "POST"
-					for _, opt := range method.Options.List {
-						if opt.Name.Token.Value == "HttpMethod" {
-							tsMethod.HttpMethod = opt.Value.(*ast.ValueString).Value
+					tsMethod.RespType = "JSON"
+
+					for _, ret := range tsMethod.Returns {
+						if ret.Stream {
+							if ret.Type == "[]byte" {
+								tsMethod.RespType = "BLOB"
+								break
+							}
+
+							tsMethod.RespType = "SSE"
 							break
 						}
 					}
@@ -219,27 +216,77 @@ func generateTypescript(pkg, output string, doc *ast.Document) error {
 		New("GenerateTS").
 		Funcs(defaultFuncsMap).
 		Funcs(template.FuncMap{
-			"ArgsName": func(method TsMethod) string {
-				return fmt.Sprintf("Service%s%sArgs", method.ServiceName, strcase.ToPascal(method.Name))
-			},
-			"ReturnsName": func(method TsMethod) string {
-				switch method.Type {
-				case "binary":
-					return "Blob"
-				case "stream":
-					return "Subscription<" + method.Returns[0].Type + ">"
-				default:
-					return fmt.Sprintf("Service%s%sReturns", method.ServiceName, strcase.ToPascal(method.Name))
+			"ToArgs": func(args []TsArg) string {
+				var sb strings.Builder
+				for i, arg := range args {
+					if i > 0 {
+						sb.WriteString(", ")
+					}
+					sb.WriteString(arg.Name)
+					sb.WriteString(": ")
+
+					if arg.Stream {
+						sb.WriteString("fileData[]")
+					} else {
+						sb.WriteString(arg.Type)
+					}
 				}
+
+				if sb.Len() > 0 {
+					sb.WriteString(", ")
+				}
+
+				sb.WriteString("_opts?: reqOpts")
+
+				return sb.String()
 			},
-			"ShouldGenerateReturn": func(method TsMethod) bool {
-				return method.Type != "stream" && method.Type != "binary"
+			"ToParams": func(args []TsArg) string {
+				var sb strings.Builder
+
+				i := 0
+				for _, arg := range args {
+					if arg.Stream {
+						continue
+					}
+
+					if i > 0 {
+						sb.WriteString(", ")
+					}
+
+					sb.WriteString(arg.Name)
+					i++
+				}
+
+				return sb.String()
 			},
-			"MethodPathValue": func(method TsMethod) string {
-				return fmt.Sprintf("/ella/http/%s/%s", strcase.ToPascal(method.ServiceName), strcase.ToPascal(method.Name))
+			// <subscription<Type>>
+			// <Blob>
+			// <[string, number, User]>
+			"ToReturns": func(method TsMethod) string {
+				if method.RespType == "SSE" {
+					return fmt.Sprintf("subscription<%s>", method.Returns[0].Type)
+				}
+
+				if method.RespType == "BLOB" {
+					return "Blob"
+				}
+
+				var sb strings.Builder
+
+				sb.WriteString("[")
+				for i, ret := range method.Returns {
+					if i > 0 {
+						sb.WriteString(", ")
+					}
+					sb.WriteString(ret.Type)
+				}
+
+				sb.WriteString("]")
+
+				return sb.String()
 			},
 		}).
-		ParseFS(typescriptTemplateFiles, "templates/typescript/*.ts.tmpl")
+		ParseFS(typescriptTemplateFiles, "typescript/*.ts.tmpl")
 	if err != nil {
 		return err
 	}
