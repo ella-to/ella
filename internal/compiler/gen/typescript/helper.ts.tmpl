@@ -1,98 +1,185 @@
 {{- define "helper" }}
-//
-// HELPER FUNCTIONS
-//
 
-type cacheEntry = {
-  value: any
-  timestamp: number
+// Type definitions
+interface fileData {
+  name: string;
+  blob: Blob;
 }
 
-const cache = new Map<string, cacheEntry>()
-
-type CallServiceOptions = {
-  headers?: Record<string, string>
-  signal?: AbortSignal
-  cacheTTL?: number
-  cacheKey?: string[]
+enum reqType {
+  JSON = "json",
+  FILE_UPLOAD = "file-upload",
 }
+
+enum respType {
+  JSON = "json",
+  SSE = "sse",
+  BLOB = "blob",
+}
+
+type meta = {
+  id: string;
+  params: Record<string, any>;
+  method: string;
+  files?: fileData[];
+  headers?: Record<string, string>;
+  abort?: AbortController;
+  withCredentials?: boolean;
+};
+
+type reqOpts = {
+  signal?: AbortSignal;
+  headers?: Record<string, string>;
+  withCredentials?: boolean;
+};
+
+XMLHttpRequest = global.XMLHttpRequest;
 
 export class ResponseError extends Error {
-  code: number
-  status: number
-  cause?: string
-  constructor(code: number, status: number, message: string, cause?: string) {
-    super(message)
-    this.code = code
-    this.status = status
-    this.cause = cause
+  code: number;
+  cause?: string;
+
+  constructor(message: string, code: number, cause?: string) {
+    super(message);
+    this.code = code;
+    this.cause = cause;
   }
 }
 
-async function callServiceUploadMethod<Req, Resp>(
-  host: string,
-  path: string,
-  method: "POST" | "PUT" | "DELETE",
-  body?: Req,
-  files?: {name: string, data: Blob}[],
-  opts?: CallServiceOptions
-) {
-
-  const formData = new FormData();
-  if (body) {
-    formData.append("payload", JSON.stringify(body));
-  }
-  if (files) {
-    for (const file of files) {
-      formData.append("files", file.data, file.name);
-    }
-  }
-
-  const resp = await fetch(createURL(host, path), {
-    method: method,
-    body: formData,
-    headers: opts?.headers,
-    credentials: "include",
-    signal: opts?.signal
-  });
-
-  const value = await resp.text();
-
-  if (resp.status > 300) {
-    const value = await resp.text()
-    let err: any
-    try {
-      err = JSON.parse(value).error
-    } catch (e) {
-      throw value
-    }
-    throw new ResponseError(err.code, resp.status, err.message, err.cause)
-  }
-
-  return JSON.parse(value) as Resp;
+export function errorIs(err: any, code: ErrorCode): boolean {
+  return err instanceof ResponseError && err.code === code;
 }
 
-export interface Subscription<Event> {
-  recv(fn: (event: Event) => void): void
-  close(): void
+function parseResponseError(msg: string): Error {
+  try {
+    const parsed = JSON.parse(msg);
+    return new ResponseError(
+      parsed.error.message,
+      parsed.error.code,
+      parsed.error.cause
+    );
+  } catch (e) {
+    return new Error(msg);
+  }
 }
 
-async function callServiceStreamMethod<Req, Event>(
-  host: string,
-  path: string,
-  method: "GET" | "POST" | "PUT" | "DELETE",
-  body?: Req,
-  opts?: CallServiceOptions
-): Promise<Subscription<Event>> {
-  const url = method == "GET" ? createURL(host, path, prepareForQs(body)) : createURL(host, path);
-  if (method == "GET") {
-    body = undefined;
-  } else {
-    if (typeof body !== "string") {
-      body = JSON.stringify(body) as any;
+export interface subscription<T> {
+  recv(fn: (event: T) => void): void;
+  close(): void;
+}
+
+type ResultResp<T extends respType> = T extends respType.JSON
+  ? Record<string, any>
+  : T extends respType.BLOB
+  ? Blob
+  : T extends respType.SSE
+  ? subscription<any>
+  : never;
+
+type CallerFunc = <T extends respType>(
+  meta: meta,
+  reqT: reqType,
+  respT: T
+) => Promise<ResultResp<T>>;
+
+export function createCall(url: string): CallerFunc {
+  return async function <T extends respType>(
+    meta: meta,
+    reqT: reqType,
+    respT: T
+  ) {
+    const headers = meta.headers || {};
+    const withCredentials = !!meta.withCredentials;
+    // JSON -> JSON
+    // JSON -> BLOB
+    // JSON -> SSE
+    // FILE_UPLOAD -> JSON
+    // FILE_UPLOAD -> BLOB
+    // FILE_UPLOAD -> SSE
+    if (reqT === reqType.JSON) {
+      const body = JSON.stringify({
+        id: meta.id,
+        method: meta.method,
+        params: meta.params,
+      });
+
+      if (respT === respType.JSON || respT === respType.BLOB) {
+        const resp = await fetch(url, {
+          headers,
+          method: "POST",
+          credentials: withCredentials ? "include" : "same-origin",
+          body,
+          signal: meta.abort?.signal,
+        });
+
+        if (resp.status !== 200) {
+          const msg = await resp.text();
+          throw parseResponseError(msg);
+        }
+
+        if (respT === respType.JSON) {
+          return resp.json();
+        } else if (respT === respType.BLOB) {
+          return resp.blob();
+        }
+      }
+
+      // SSE
+      return createSSE(url, body, headers, withCredentials);
+    } else if (reqT === reqType.FILE_UPLOAD) {
+      const body = new FormData();
+
+      body.append("id", meta.id);
+      body.append("method", meta.method);
+      body.append("params", JSON.stringify(meta.params));
+
+      if (meta.files) {
+        for (const file of meta.files) {
+          body.append(file.name, file.blob);
+        }
+      }
+
+      if (respT === respType.JSON || respT === respType.BLOB) {
+        const resp = await fetch(url, {
+          headers,
+          method: "POST",
+          credentials: withCredentials ? "include" : "same-origin",
+          body,
+          signal: meta.abort?.signal,
+        });
+
+        if (resp.status !== 200) {
+          const msg = await resp.text();
+          throw parseResponseError(msg);
+        }
+
+        if (respT === respType.JSON) {
+          return resp.json();
+        } else if (respT === respType.BLOB) {
+          return resp.blob();
+        }
+      }
+
+      // SSE
+      return createSSE(url, body, headers, withCredentials);
+    } else {
+      throw new Error("Unsupported request/response type");
     }
-  }
-  const sse = new _EventSource(new URL(url), { withCredentials: true, method, body, headers: opts?.headers } as any);
+  };
+}
+
+function createSSE<T>(
+  url: string,
+  body: string | FormData,
+  headers: Record<string, string>,
+  withCredentials: boolean = false
+): Promise<subscription<T>> {
+  const sse = new eventSource(new URL(url), {
+    withCredentials: withCredentials,
+    method: "POST",
+    body,
+    headers: headers,
+  } as any);
 
   return new Promise((resolve, reject) => {
     sse.addEventListener("error", (event: any) => {
@@ -105,130 +192,17 @@ async function callServiceStreamMethod<Req, Event>(
 
     sse.addEventListener("open", () => {
       resolve({
-        recv(fn: (event: Event) => void) {
+        recv(fn: (event: T) => void) {
           sse.addEventListener("message", (msg: any) => {
-            fn(JSON.parse(msg.data) as Event);
+            fn(JSON.parse(msg.data) as T);
           });
         },
         close() {
           sse.close();
         },
       });
-    })
+    });
   });
-}
-
-async function callServiceMethod<Req, Resp>(
-  host: string,
-  path: string,
-  method: "GET" | "POST" | "PUT" | "DELETE",
-  body?: Req,
-  rawBlob?: boolean,
-  opts?: CallServiceOptions
-): Promise<Resp> {
-  const url =
-    method === "GET"
-      ? createURL(host, path, prepareForQs(body))
-      : createURL(host, path);
-
-  if (method === "GET") {
-    body = undefined;
-  }
-
-  if (opts?.cacheTTL && (!opts.cacheKey || opts.cacheKey.length === 0)) {
-    throw new Error("cacheKey is required when cacheTTL is set: " + url);
-  }
-
-  const cacheKey = opts?.cacheTTL ? `${url}:${opts.cacheKey.join(":")}` : undefined;
-
-  if (opts?.cacheTTL) {
-    const entry = cache.get(cacheKey)
-
-    if (entry) {
-      if (Date.now() < entry.timestamp) {
-        console.log("cache hit:", url)
-        return entry.value as Resp
-      }
-
-      console.log("cache expired:", url)
-      cache.delete(url)
-    }
-  }
-
-  let headers = opts?.headers
-
-  if (!headers) {
-    headers = {
-      "Content-Type": "application/json",
-    };
-  }
-
-  const resp = await fetch(url, {
-    method: method,
-    body: body ? JSON.stringify(body) : undefined,
-    headers: headers,
-    credentials: "include",
-    signal: opts?.signal
-  });
-
-  if (resp.status > 300) {
-    const value = await resp.text()
-    let err: any
-    try {
-      err = JSON.parse(value).error
-    } catch (e) {
-      throw value
-    }
-    throw new ResponseError(err.code, resp.status, err.message, err.cause)
-  }
-
-  if (rawBlob) {
-    return resp.blob() as Resp;
-  }
-
-  const value = await resp.text();
-  const valueJson = JSON.parse(value) as Resp;
-
-  if (opts?.cacheTTL) {
-    cache.set(cacheKey, { value: valueJson, timestamp: Date.now() + opts.cacheTTL })
-  }
-
-  return valueJson;
-}
-
-function prepareForQs(obj?: any): Record<string, string> | undefined {
-  if (!obj) {
-    return undefined;
-  }
-
-  const record: Record<string, string> = {};
-  for (const key in obj) {
-    const value = obj[key];
-    if (
-      typeof value !== "string" &&
-      typeof value !== "number" &&
-      typeof value !== "boolean"
-    ) {
-      throw new Error("Invalid value type for key: " + key);
-    }
-    record[key] = encodeURIComponent(obj[key] + "");
-  }
-  return record;
-}
-
-function createURL(
-  host: string,
-  path: string,
-  qs?: Record<string, string>
-): string {
-  const url = new URL(host);
-  url.pathname = (url.pathname + path).replace(/\/\//g, "/");
-  if (qs) {
-    for (const key in qs) {
-      url.searchParams.append(key, qs[key]);
-    }
-  }
-  return url.href;
 }
 
 // SSE IMPLEMENTATION
@@ -236,29 +210,28 @@ function createURL(
 // this is required because SSE by default doesn't work in react-native and also
 // header can't be modified. This implementation is based on XMLHttpRequest
 // added some basic types to make typescript happy
-
-class _EventSource {
+class eventSource {
   ERROR = -1;
   CONNECTING = 0;
   OPEN = 1;
   CLOSED = 2;
 
-  private interval: any
-  private lastEventId: any
-  private lastIndexProcessed: any
-  private eventType: any
-  private status: any
-  private eventHandlers: any
-  private method: any
-  private timeout: any
-  private headers: any
-  private body: any
-  private debug: any
-  private timeoutBeforeConnection: any
-  private _xhr: any
-  private _pollTimer: any
-  private url: any
-  private withCredentials: boolean
+  private interval: any;
+  private lastEventId: any;
+  private lastIndexProcessed: any;
+  private eventType: any;
+  private status: any;
+  private eventHandlers: any;
+  private method: any;
+  private timeout: any;
+  private headers: any;
+  private body: any;
+  private debug: any;
+  private timeoutBeforeConnection: any;
+  private _xhr: any;
+  private _pollTimer: any;
+  private url: any;
+  private withCredentials: boolean;
 
   constructor(url: URL, options: any = {}) {
     this.interval = options.pollingInterval || 5000;
@@ -275,7 +248,7 @@ class _EventSource {
       close: [],
     };
 
-    this.method = options.method || 'GET';
+    this.method = options.method || "GET";
     this.timeout = options.timeout || 0;
     this.headers = options.headers || {};
     this.body = options.body || undefined;
@@ -285,11 +258,14 @@ class _EventSource {
     this._xhr = null;
     this._pollTimer = null;
 
-    if (!url || (typeof url !== 'string' && typeof url.toString !== 'function')) {
-      throw new SyntaxError('[EventSource] Invalid URL argument.');
+    if (
+      !url ||
+      (typeof url !== "string" && typeof url.toString !== "function")
+    ) {
+      throw new SyntaxError("[EventSource] Invalid URL argument.");
     }
 
-    if (typeof url.toString === 'function') {
+    if (typeof url.toString === "function") {
       this.url = url.toString();
     } else {
       this.url = url;
@@ -319,12 +295,12 @@ class _EventSource {
         }
       }
 
-      this._xhr.setRequestHeader('Accept', 'text/event-stream');
-      this._xhr.setRequestHeader('Cache-Control', 'no-cache');
-      this._xhr.setRequestHeader('X-Requested-With', 'XMLHttpRequest');
+      this._xhr.setRequestHeader("Accept", "text/event-stream");
+      this._xhr.setRequestHeader("Cache-Control", "no-cache");
+      this._xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest");
 
       if (this.lastEventId !== null) {
-        this._xhr.setRequestHeader('Last-Event-ID', this.lastEventId);
+        this._xhr.setRequestHeader("Last-Event-ID", this.lastEventId);
       }
 
       this._xhr.timeout = this.timeout;
@@ -338,40 +314,48 @@ class _EventSource {
           );
         }
 
-        if (![XMLHttpRequest.DONE, XMLHttpRequest.LOADING].includes(xhr.readyState)) {
+        if (
+          ![XMLHttpRequest.DONE, XMLHttpRequest.LOADING].includes(
+            xhr.readyState
+          )
+        ) {
           return;
         }
 
         if (xhr.status >= 200 && xhr.status < 400) {
           if (this.status === this.CONNECTING) {
             this.status = this.OPEN;
-            this.dispatch('open', { type: 'open' });
+            this.dispatch("open", { type: "open" });
           }
 
-          this._handleEvent(xhr.responseText || '');
+          this._handleEvent(xhr.responseText || "");
 
           if (xhr.readyState === XMLHttpRequest.DONE) {
             if (this.debug) {
               console.debug(
-                '[EventSource][onreadystatechange][DONE] Operation done. Reconnecting...'
+                "[EventSource][onreadystatechange][DONE] Operation done. Reconnecting..."
               );
             }
             this._pollAgain(this.interval);
           }
         } else if (this.status !== this.CLOSED) {
           if (this._xhr.status !== 0) {
-            this.dispatch('error', {
-              type: 'error',
+            this.dispatch("error", {
+              type: "error",
               message: xhr.responseText,
               xhrStatus: xhr.status,
               xhrState: xhr.readyState,
             });
           }
 
-          if ([XMLHttpRequest.DONE, XMLHttpRequest.UNSENT].includes(xhr.readyState)) {
+          if (
+            [XMLHttpRequest.DONE, XMLHttpRequest.UNSENT].includes(
+              xhr.readyState
+            )
+          ) {
             if (this.debug) {
               console.debug(
-                '[EventSource][onreadystatechange][ERROR] Response status error. Reconnecting...'
+                "[EventSource][onreadystatechange][ERROR] Response status error. Reconnecting..."
               );
             }
 
@@ -383,8 +367,8 @@ class _EventSource {
       this._xhr.onerror = (e: any) => {
         this.status === this.ERROR;
 
-        this.dispatch('error', {
-          type: 'error',
+        this.dispatch("error", {
+          type: "error",
           message: this._xhr.responseText,
           xhrStatus: this._xhr.status,
           xhrState: this._xhr.readyState,
@@ -400,8 +384,8 @@ class _EventSource {
       if (this.timeout > 0) {
         setTimeout(() => {
           if (this._xhr.readyState === XMLHttpRequest.LOADING) {
-            this.dispatch('error', {
-              type: 'timeout',
+            this.dispatch("error", {
+              type: "timeout",
             });
 
             this.close();
@@ -410,8 +394,8 @@ class _EventSource {
       }
     } catch (e: any) {
       this.status = this.ERROR;
-      this.dispatch('error', {
-        type: 'exception',
+      this.dispatch("error", {
+        type: "exception",
         message: e.message,
         error: e,
       });
@@ -419,30 +403,30 @@ class _EventSource {
   }
 
   _handleEvent(response: any) {
-    const parts = response.substr(this.lastIndexProcessed).split('\n');
-    this.lastIndexProcessed = response.lastIndexOf('\n\n') + 2;
+    const parts = response.substr(this.lastIndexProcessed).split("\n");
+    this.lastIndexProcessed = response.lastIndexOf("\n\n") + 2;
     let data: any[] = [];
     let retry = 0;
-    let line = '';
+    let line = "";
 
     for (let i = 0; i < parts.length; i++) {
-      line = parts[i].replace(/^(\s|\u00A0)+|(\s|\u00A0)+$/g, '');
-      if (line.indexOf('event') === 0) {
-        this.eventType = line.replace(/event:?\s*/, '');
-      } else if (line.indexOf('retry') === 0) {
-        retry = parseInt(line.replace(/retry:?\s*/, ''), 10);
+      line = parts[i].replace(/^(\s|\u00A0)+|(\s|\u00A0)+$/g, "");
+      if (line.indexOf("event") === 0) {
+        this.eventType = line.replace(/event:?\s*/, "");
+      } else if (line.indexOf("retry") === 0) {
+        retry = parseInt(line.replace(/retry:?\s*/, ""), 10);
         if (!isNaN(retry)) {
           this.interval = retry;
         }
-      } else if (line.indexOf('data') === 0) {
-        data.push(line.replace(/data:?\s*/, ''));
-      } else if (line.indexOf('id:') === 0) {
-        this.lastEventId = line.replace(/id:?\s*/, '');
-      } else if (line.indexOf('id') === 0) {
+      } else if (line.indexOf("data") === 0) {
+        data.push(line.replace(/data:?\s*/, ""));
+      } else if (line.indexOf("id:") === 0) {
+        this.lastEventId = line.replace(/id:?\s*/, "");
+      } else if (line.indexOf("id") === 0) {
         this.lastEventId = null;
-      } else if (line === '') {
+      } else if (line === "") {
         if (data.length > 0) {
-          const eventType = this.eventType || 'message'
+          const eventType = this.eventType || "message";
           const event = {
             type: eventType,
             data: data.join("\n"),
@@ -463,13 +447,15 @@ class _EventSource {
     if (this.eventHandlers[type] === undefined) {
       this.eventHandlers[type] = [];
     }
-    
+
     this.eventHandlers[type].push(listener);
   }
 
   removeEventListener(type: any, listener: any) {
     if (this.eventHandlers[type] !== undefined) {
-      this.eventHandlers[type] = this.eventHandlers[type].filter((handler: any) => handler !== listener);
+      this.eventHandlers[type] = this.eventHandlers[type].filter(
+        (handler: any) => handler !== listener
+      );
     }
   }
 
@@ -482,7 +468,9 @@ class _EventSource {
       }
     } else {
       if (!availableTypes.includes(type)) {
-        throw Error(`[EventSource] '${type}' type is not supported event type.`);
+        throw Error(
+          `[EventSource] '${type}' type is not supported event type.`
+        );
       }
 
       this.eventHandlers[type] = [];
@@ -508,7 +496,7 @@ class _EventSource {
       this._xhr.abort();
     }
 
-    this.dispatch('close', { type: 'close' });
+    this.dispatch("close", { type: "close" });
   }
 }
 

@@ -15,8 +15,4 @@ export const ErrorCode2Name = {
 {{- end }}
 }
 
-export function ErrorIs(err: any, errCode: ErrorCode): boolean {
-  return (err instanceof ResponseError) && err.code === errCode
-}
-
 {{- end }}
