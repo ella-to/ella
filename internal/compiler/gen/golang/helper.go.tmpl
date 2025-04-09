@@ -604,6 +604,26 @@ func parseHandlerRequest(r io.Reader, contentType string) (*Request, error) {
 	return req, nil
 }
 
+type httpContext struct {
+	Request  *http.Request
+	Response http.ResponseWriter
+}
+
+func injectHttpContext(ctx context.Context, r *http.Request, w http.ResponseWriter) context.Context {
+	return context.WithValue(ctx, "ella_http_context", &httpContext{
+		Request:  r,
+		Response: w,
+	})
+}
+
+func GetHttpContext(ctx context.Context) (*http.Request, http.ResponseWriter, bool) {
+	httpCtx, ok := ctx.Value("ella_http_context").(*httpContext)
+	if !ok {
+		return nil, nil, false
+	}
+	return httpCtx.Request, httpCtx.Response, true
+}
+
 func NewHttpHandler(srv Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		req, err := parseHandlerRequest(r.Body, r.Header.Get("Content-Type"))
@@ -612,7 +632,7 @@ func NewHttpHandler(srv Handler) http.Handler {
 			return
 		}
 
-		srv.Handle(r.Context(), req, w)
+		srv.Handle(injectHttpContext(r.Context(), r, w), req, w)
 	})
 }
 
@@ -756,6 +776,7 @@ func writeJsonResults(out io.Writer) func(...any) {
 				w.WriteHeader(http.StatusExpectationFailed)
 			}
 			writeJsonError(out, rets[len(rets)-1].(error))
+			return
 		}
 
 		if isHttpWriter {

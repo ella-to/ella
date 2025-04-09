@@ -15,8 +15,9 @@ export class {{ $service.Name }} {
     return this.caller<respType.{{ $method.RespType }}>(
       {
         id: "",
-        method: "{{ $method.Name }}",
+        method: "{{ $service.Name }}.{{ $method.Name }}",
         params: { {{ $method.Args | ToParams }} },
+        files: {{ $method.Args | ToFileUploadArgName }},
         abort: _opts?.signal,
         headers: _opts?.headers,
         withCredentials: _opts?.withCredentials,        

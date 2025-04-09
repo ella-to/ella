@@ -33,8 +33,6 @@ type reqOpts = {
   withCredentials?: boolean;
 };
 
-XMLHttpRequest = global.XMLHttpRequest;
-
 export class ResponseError extends Error {
   code: number;
   cause?: string;
@@ -82,7 +80,7 @@ type CallerFunc = <T extends respType>(
   respT: T
 ) => Promise<ResultResp<T>>;
 
-export function createCall(url: string): CallerFunc {
+export function createCaller(url: string): CallerFunc {
   return async function <T extends respType>(
     meta: meta,
     reqT: reqType,
@@ -97,6 +95,8 @@ export function createCall(url: string): CallerFunc {
     // FILE_UPLOAD -> BLOB
     // FILE_UPLOAD -> SSE
     if (reqT === reqType.JSON) {
+      headers["Content-Type"] = "application/json";
+
       const body = JSON.stringify({
         id: meta.id,
         method: meta.method,
@@ -118,7 +118,8 @@ export function createCall(url: string): CallerFunc {
         }
 
         if (respT === respType.JSON) {
-          return resp.json();
+          const msg = await resp.text();
+          return JSON.parse(msg).result;
         } else if (respT === respType.BLOB) {
           return resp.blob();
         }
@@ -154,7 +155,8 @@ export function createCall(url: string): CallerFunc {
         }
 
         if (respT === respType.JSON) {
-          return resp.json();
+          const msg = await resp.text();
+          return JSON.parse(msg).result;
         } else if (respT === respType.BLOB) {
           return resp.blob();
         }

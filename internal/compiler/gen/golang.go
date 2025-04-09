@@ -324,7 +324,7 @@ func generateGo(pkg, output string, doc *ast.Document) error {
 	isModelType := createIsModelTypeFunc(doc.Models)
 
 	getServicesByType := func(typ ast.ServiceType) []GoService {
-		return mapperFunc(getGolangServicesByType(doc.Services, typ), func(service *ast.Service) GoService {
+		return mapperFunc(getServicesByType(doc.Services, typ), func(service *ast.Service) GoService {
 			return GoService{
 				Name: service.Name.Token.Value,
 				Methods: mapperFunc(service.Methods, func(method *ast.Method) GoMethod {
@@ -484,12 +484,6 @@ func generateGo(pkg, output string, doc *ast.Document) error {
 	}
 
 	return tmpl.ExecuteTemplate(out, "main", data)
-}
-
-func getGolangServicesByType(services []*ast.Service, typ ast.ServiceType) []*ast.Service {
-	return filterFunc(services, func(service *ast.Service) bool {
-		return service.Type == typ
-	})
 }
 
 func getGolangValue(value ast.Value) string {

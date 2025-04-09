@@ -151,7 +151,7 @@ func generateTypescript(pkg, output string, doc *ast.Document) error {
 				}),
 			}
 		}),
-		HttpServices: mapperFunc(doc.Services, func(service *ast.Service) TsService {
+		HttpServices: mapperFunc(getServicesByType(doc.Services, ast.ServiceHTTP), func(service *ast.Service) TsService {
 			return TsService{
 				Name: service.Name.Token.Value,
 				Methods: mapperFunc(service.Methods, func(method *ast.Method) TsMethod {
@@ -180,7 +180,7 @@ func generateTypescript(pkg, output string, doc *ast.Document) error {
 					tsMethod.ReqType = "JSON"
 
 					for _, arg := range tsMethod.Args {
-						if arg.Stream && arg.Type == "[]byte" {
+						if arg.Stream && arg.Type == "byte[]" {
 							tsMethod.ReqType = "FILE_UPLOAD"
 							break
 						}
@@ -190,7 +190,7 @@ func generateTypescript(pkg, output string, doc *ast.Document) error {
 
 					for _, ret := range tsMethod.Returns {
 						if ret.Stream {
-							if ret.Type == "[]byte" {
+							if ret.Type == "byte[]" {
 								tsMethod.RespType = "BLOB"
 								break
 							}
@@ -284,6 +284,15 @@ func generateTypescript(pkg, output string, doc *ast.Document) error {
 				sb.WriteString("]")
 
 				return sb.String()
+			},
+			"ToFileUploadArgName": func(args []TsArg) string {
+				for _, arg := range args {
+					if arg.Stream && arg.Type == "byte[]" {
+						return arg.Name
+					}
+				}
+
+				return "undefined"
 			},
 		}).
 		ParseFS(typescriptTemplateFiles, "typescript/*.ts.tmpl")

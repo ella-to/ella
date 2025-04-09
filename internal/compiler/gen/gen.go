@@ -79,6 +79,12 @@ var defaultFuncsMap = template.FuncMap{
 	},
 }
 
+func getServicesByType(services []*ast.Service, typ ast.ServiceType) []*ast.Service {
+	return filterFunc(services, func(service *ast.Service) bool {
+		return service.Type == typ
+	})
+}
+
 func mapperFunc[I, O any](list []I, f func(I) O) []O {
 	var results []O
 

@@ -66,7 +66,7 @@ func (d *Document) Format(sb *strings.Builder) {
 
 	for i, s := range d.Services {
 		if i != 0 {
-			sb.WriteString("\n")
+			sb.WriteString("\n\n")
 		}
 
 		s.Format(sb)
