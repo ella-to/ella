@@ -54,7 +54,7 @@ func PrettyMessage(filename string, src string, start int, end int, msg string) 
 
 	// Print error message with line and column
 	if filename != "" {
-		fmt.Fprintf(&output, "Error: %s at (%s) line %d, column %d\n\n", msg, filename, lineStart+1, column+1)
+		fmt.Fprintf(&output, "Error: %s at (%s:%d:%d)\n\n", msg, filename, lineStart+1, column+1)
 	} else {
 		fmt.Fprintf(&output, "Error: %s at line %d, column %d\n\n", msg, lineStart+1, column+1)
 	}

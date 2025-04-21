@@ -18,7 +18,7 @@ model B {
 
 	result := PrettyMessage("test.ella", source, 14, 15, "test error")
 
-	expected := `Error: test error at (test.ella) line 5, column 2
+	expected := `Error: test error at (test.ella:5:2)
 
    2 | enum A {
    3 | }
