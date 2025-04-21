@@ -1,4 +1,0 @@
-service SignalService {
-    http Send(inbox: string, msg: string)
-    http Recv(inbox: string) => (msgs: stream string)
-}
