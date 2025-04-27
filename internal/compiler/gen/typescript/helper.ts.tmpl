@@ -25,12 +25,26 @@ type meta = {
   headers?: Record<string, string>;
   abort?: AbortController;
   withCredentials?: boolean;
+  cache?: cacheOpts;
 };
+
+type cacheOpts = {
+  // if the ttl is not provided, the cache will use the default ttl
+  // set in cache implementation
+  ttl?: number;
+  // if the keys are not provided, the cache will use the method name
+  // as the key
+  keys?: string[];
+  // us ethe skip if cache is not needed and need to be skipped
+  // for example, if the cache is not needed for a specific request
+  skip?: boolean;
+}
 
 type reqOpts = {
   signal?: AbortSignal;
   headers?: Record<string, string>;
   withCredentials?: boolean;
+  cache?: cacheOpts;
 };
 
 export class ResponseError extends Error {
@@ -80,7 +94,7 @@ type CallerFunc = <T extends respType>(
   respT: T
 ) => Promise<ResultResp<T>>;
 
-export function createCaller(url: string): CallerFunc {
+export function createCaller(url: string, cache?: Cache): CallerFunc {
   return async function <T extends respType>(
     meta: meta,
     reqT: reqType,
@@ -103,6 +117,18 @@ export function createCaller(url: string): CallerFunc {
         params: meta.params,
       });
 
+      let cacheKey = "";
+      if (cache && respT === respType.JSON && meta.cache) {
+        cacheKey = `${meta.method}:${meta.cache.keys && meta.cache.keys.length > 0 ? meta.cache.keys.join(",") : 'NoKey'}`;
+
+        if (!meta.cache.skip) {
+          const [cachedValue, found] = cache.get(cacheKey);
+          if (found) {
+            return cachedValue;
+          }
+        }
+      }
+
       if (respT === respType.JSON || respT === respType.BLOB) {
         const resp = await fetch(url, {
           headers,
@@ -119,7 +145,11 @@ export function createCaller(url: string): CallerFunc {
 
         if (respT === respType.JSON) {
           const msg = await resp.text();
-          return JSON.parse(msg).result;
+          const result = JSON.parse(msg).result;
+          if (cacheKey !== "") {
+            cache.set(cacheKey, result, meta.cache.ttl);
+          }
+          return result;
         } else if (respT === respType.BLOB) {
           return resp.blob();
         }
@@ -500,6 +530,58 @@ class eventSource {
 
     this.dispatch("close", { type: "close" });
   }
+}
+
+//
+// Cache implementation
+// 
+
+export interface Cache {
+  get(key: string): [any, boolean];
+  set(key: string, value: any, ttlMs?: number): void;
+  delete(key: string): void;
+  clear(): void;
+}
+
+class MemoryCache implements Cache {
+  private cache: Map<string, { value: any; expiry: number | null }>;
+  private defaultTTL: number;
+
+  constructor(defaultTTL: number) {
+    this.cache = new Map();
+    this.defaultTTL = defaultTTL;
+  }
+
+  get(key: string): [any, boolena] {
+    const item = this.cache.get(key);
+    
+    if (!item) return [undefined, false];
+    
+    // Check if the item has expired
+    if (item.expiry !== null && Date.now() > item.expiry) {
+      this.delete(key);
+      return [undefined, false];
+    }
+    
+    return [item.value, true];
+  }
+
+  set(key: string, value: any, ttlMs?: number): void {
+    ttlMs = ttlMs || this.defaultTTL;
+    this.cache.set(key, { value, expiry: Date.now() + ttlMs });
+  }
+
+  delete(key: string): void {
+    this.cache.delete(key);
+  }
+
+  clear(): void {
+    this.cache.clear();
+  }
+}
+
+export function createMemoryCache(defaultTTL: number): Cache {
+  return new MemoryCache(defaultTTL);
 }
 
 {{- end }}

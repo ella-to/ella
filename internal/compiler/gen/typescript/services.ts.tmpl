@@ -20,7 +20,8 @@ export class {{ $service.Name }} {
         files: {{ $method.Args | ToFileUploadArgName }},
         abort: _opts?.signal,
         headers: _opts?.headers,
-        withCredentials: _opts?.withCredentials,        
+        withCredentials: _opts?.withCredentials,
+        cache: _opts?.cache,
       },
       reqType.{{ $method.ReqType }},
       respType.{{ $method.RespType }}
