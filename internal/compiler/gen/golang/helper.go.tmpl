@@ -326,7 +326,7 @@ func NewHttpClient(endpoint string, client *http.Client) Caller {
 
 		httpReq.Header.Set("Content-Type", contentType)
 
-		httpResp, err := http.DefaultClient.Do(httpReq)
+		httpResp, err := client.Do(httpReq)
 		if err != nil {
 			return errorJsonReader(err), "application/json"
 		}
