@@ -749,6 +749,12 @@ func errorJsonReader(err error) io.Reader {
 }
 
 func writeJsonError(resp io.Writer, err error) {
+	if w, isHttpWriter := resp.(http.ResponseWriter); isHttpWriter {
+		// need to set the header to application/json
+		// so the client can parse the error correctly 
+		w.Header().Set("Content-Type", "application/json")
+	}
+
 	switch e := err.(type) {
 	case *Error:
 		{
