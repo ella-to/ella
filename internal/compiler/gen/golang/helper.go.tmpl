@@ -772,6 +772,9 @@ func writeJsonError(resp io.Writer, err error) {
 func writeJsonResults(out io.Writer) func(...any) {
 	return func(rets ...any) {
 		w, isHttpWriter := out.(http.ResponseWriter)
+		if closer, ok := out.(io.Closer); ok {
+			defer closer.Close()
+		}		
 
 		if isHttpWriter {
 			w.Header().Set("Content-Type", "application/json")
