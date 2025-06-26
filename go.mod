@@ -3,7 +3,7 @@ module ella.to/ella
 go 1.24.1
 
 require (
-	ella.to/sse v0.0.8
+	ella.to/sse v0.0.9
 	github.com/stretchr/testify v1.10.0
 )
 
