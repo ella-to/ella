@@ -11,7 +11,7 @@ import (
 	"ella.to/ella/internal/compiler/parser"
 )
 
-const Version = "0.2.5"
+const Version = "0.2.6"
 
 const usage = `
 ███████╗██╗░░░░░██╗░░░░░░█████╗░
