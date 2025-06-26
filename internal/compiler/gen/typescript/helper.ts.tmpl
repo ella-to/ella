@@ -225,7 +225,7 @@ function createSSE<T>(
     sse.addEventListener("open", () => {
       resolve({
         recv(fn: (event: T) => void) {
-          sse.addEventListener("message", (msg: any) => {
+          sse.addEventListener("data", (msg: any) => {
             fn(JSON.parse(msg.data) as T);
           });
         },
