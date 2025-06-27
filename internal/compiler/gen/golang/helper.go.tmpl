@@ -709,6 +709,14 @@ func writeSSE[T any](ch <-chan T, errs <-chan error, resp io.Writer) {
 	var buffer bytes.Buffer
 	var msg *sse.Message
 
+	// Initial message to indicate the start of the stream
+	// this forced the XHR to be opened, without this the xhr won't be opened
+	// and UI will blocked
+	msg = sse.NewMessage(fmt.Sprintf("%d", id), "init", buffer.String())
+	if err := pusher.Push(msg); err != nil {
+		return
+	}
+
 	for {
 		select {
 		case err, ok := <-errs:
