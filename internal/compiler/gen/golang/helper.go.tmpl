@@ -247,6 +247,7 @@ func NewHttpClient(endpoint string, client *http.Client) Caller {
 
 				go func() {
 					var part io.Writer
+					var err error
 
 					mw := multipart.NewWriter(pw)
 
@@ -300,6 +301,10 @@ func NewHttpClient(endpoint string, client *http.Client) Caller {
 					for {
 						filename, fileReader, err = req.Files()
 						if errors.Is(err, io.EOF) {
+							// since this is the end of the files,
+							// no need to return the error
+							// so we set it to nil
+							err = nil
 							break
 						} else if err != nil {
 							return
