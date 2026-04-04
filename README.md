@@ -4,214 +4,206 @@
 █████╗░░██║░░░░░██║░░░░░███████║
 ██╔══╝░░██║░░░░░██║░░░░░██╔══██║
 ███████╗███████╗███████╗██║░░██║
-╚══════╝╚══════╝╚══════╝╚═╝░░╚═╝ v0.2.7
+╚══════╝╚══════╝╚══════╝╚═╝░░╚═╝
 ```
+<div align="center">
 
-Ella, is yet another compiler to produce Go and Typescript code based on simple and easy-to-read schema IDL. There are many tools like gRPC, Twirp or event WebRPC to generate codes, but this little compiler is designed based on my views of 12+ years of developing backends and APIs. I wanted to simplify the tooling and produce almost perfect optimized, handcrafted code that can be read and understood.
+[![Go Reference](https://pkg.go.dev/badge/ella.to/ella.svg)](https://pkg.go.dev/ella.to/ella)
+[![Go Report Card](https://goreportcard.com/badge/ella.to/ella)](https://goreportcard.com/report/ella.to/ella)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-Ella's schema went through several iterations to make it easier for extension and backward compatibility in future releases.
+**ella** is a schema compiler that generates Go, TypeScript, and WebAssembly code from a single, human-readable definition language.
 
-> **NOTE:**
->
-> Ella's code generated has been used in couple of production projects, it has some designs that might not fit your needs, but I think it might solve a large number of projects. Also Ella's only emit `Go`, as a server and client, and `Typescript` as only client. This is intentinal as it serves my needs. However it can be easily extetended to produce other languages code by traversing the generated AST. For getting some examples about that, please refer to `generate-golang.go` and `generate-typescript.go`
+</div>
 
-# Installation
+## What Is It
 
-to install Ella's compiler, simply use the go install command
+Ella takes `.ella` schema files and generates type-safe client/server code for Go, TypeScript type definitions, and WASM bindings. Think of it like gRPC or Protocol Buffers, but with a much simpler syntax that reads like pseudocode.
+
+You define your models, enums, services, and errors in one place, and ella generates everything you need to call those services from Go backends, TypeScript frontends, or browser WASM modules.
+
+## Installation
 
 ```bash
-go install ella.to/ella@v0.2.7
+go install ella.to/ella@latest
 ```
 
-# Usage
-
-Simplicity applies to the CLI command as well, it looks for all files that need to be compiled and outputs the result to the designated file. The extension of the output file tells the compiler whether you want to produce the typescript or golang code. That's pretty much of it.
-
-For example, the following command, will generate `api.gen.go` in `/api` folder with the package name `api` and will read all the ella files inside `./schema` folder.
+## Commands
 
 ```bash
-ella gen api /api/api.gen.go ./schema/*.ella
+# Format .ella files in place
+ella fmt "./schema/src/*.ella"
+
+# Generate Go code
+ella gen schema "./schema/output.gen.go" "./schema/src/*.ella"
+
+# Generate Go code with WASM extensions (for browser clients)
+ella gen schema --allow-ext "./schema/output.gen_js.go" "./schema/src/*.ella"
+
+# Generate TypeScript type definitions
+ella gen schema "./web/src/schema.d.ts" "./schema/src/*.ella"
+
+# Print AST for debugging
+ella gen schema --debug "./schema/output.gen.go" "./schema/src/*.ella"
+
+# Print version
+ella ver
 ```
 
-Also, we can format the schema as well to have a consistent look by running the following command
+The output format is determined by the file extension of the output path:
+- `.go` — Go structs, interfaces, JSON-RPC client/server code
+- `_js.go` — Go WASM bindings (use `--allow-ext` flag)
+- `.ts` / `.d.ts` — TypeScript type definitions and interfaces
+
+## Schema Language
+
+### Constants
+
+Constants define fixed values. They're useful for event topic names, configuration thresholds, or anything you want shared across generated code.
+
+```ella
+const TopicUserCreated = "app.user.created"
+const TopicUserDeleted = "app.user.deleted"
+const MaxUploadSize = 100mb
+const RequestTimeout = 30s
+```
+
+Size units: `kb`, `mb`, `gb`, `tb`, `eb`
+Time units: `ms`, `s`, `m`, `h`
+
+### Enums
+
+Enums default to integer values starting at 0. You can also give them explicit string values.
+
+```ella
+# Integer enum (values: 0, 1, 2)
+enum UserStatus {
+    Pending
+    Active
+    Disabled
+}
+
+# String enum
+enum DeviceStatus {
+    Init = "init"
+    Online = "online"
+    Offline = "offline"
+}
+```
+
+### Models
+
+Models define data structures. Fields have a name and a type, separated by a colon.
+
+```ella
+model User {
+    Id: string
+    Email: string
+    Name: string
+    Status: UserStatus
+    Created: timestamp
+    Attributes: map<string, any>
+}
+```
+
+Models can extend other models to reuse fields:
+
+```ella
+model Device {
+    ...User
+    MachineId: string
+    DeviceStatus: DeviceStatus
+}
+```
+
+### Types
+
+| Type | Description |
+|------|-------------|
+| `string` | Text |
+| `bool` | Boolean |
+| `byte` | Single byte |
+| `int8`, `int16`, `int32`, `int64` | Signed integers |
+| `uint8`, `uint16`, `uint32`, `uint64` | Unsigned integers |
+| `float32`, `float64` | Floating point |
+| `timestamp` | Unix timestamp |
+| `any` | Untyped (maps to `interface{}` / `any`) |
+| `[]Type` | Array of Type |
+| `map<K, V>` | Map with key type K and value type V |
+
+### Template Strings
+
+String constants with `{{ }}` placeholders generate functions instead of plain values:
+
+```ella
+const TopicUserStatus = "app.user.{{userId}}.status"
+```
+
+This generates a function that takes `userId` as a parameter and returns the interpolated string.
+
+### Services
+
+Services define RPC methods. Each method lists its request parameters and response fields.
+
+```ella
+service UserService {
+    Create (email: string, name: string) => (user: User)
+    GetById (id: string) => (user: User)
+    UpdateStatus (id: string, status: UserStatus) => (user: User)
+    Delete (id: string)
+    List () => (users: []User)
+}
+```
+
+Methods without a return clause produce no response body.
+
+### Errors
+
+Named errors with optional HTTP status codes:
+
+```ella
+error ErrUserNotFound { Msg = "user not found" }
+error ErrEmailConflict { Code = 409 Msg = "email already exists" }
+```
+
+These generate typed error values in Go that work with `errors.Is()`.
+
+## Generated Code
+
+### Go
+
+The Go output includes:
+- Struct types with `json:"camelCase"` tags for all models
+- Enum types with `String()`, `MarshalJSON()`, and `UnmarshalJSON()` methods
+- A service interface (e.g. `UserServiceHandler`) with `context.Context` on every method
+- A server constructor that wires up JSON-RPC method routing
+- A client constructor that implements the same interface via JSON-RPC calls
+- Typed error variables
+
+### TypeScript
+
+The TypeScript output includes:
+- Interface definitions for all models
+- Enum types as string union types
+- Service interfaces with `Promise<T>` return types
+- Support for `AbortSignal`, caching, and timeout options
+
+### WASM
+
+The WASM output (with `--allow-ext`) generates Go code that:
+- Creates a JavaScript-callable API object
+- Wraps each service method as an async function
+- Handles request/response serialization through the WASM bridge
+- Supports client-side caching with configurable TTL
+
+## Formatting
+
+`ella fmt` normalizes your schema files by sorting declarations in a consistent order: constants, then enums, then models, then services, then errors. This keeps things tidy across a team.
 
 ```bash
-ella fmt ./schema/*.ella
+ella fmt "./schema/src/*.ella"
 ```
 
-The full CLI documentation can be accessed by running Ella command without any arguments
+## License
 
-```
-███████╗██╗░░░░░██╗░░░░░░█████╗░
-██╔════╝██║░░░░░██║░░░░░██╔══██╗
-█████╗░░██║░░░░░██║░░░░░███████║
-██╔══╝░░██║░░░░░██║░░░░░██╔══██║
-███████╗███████╗███████╗██║░░██║
-╚══════╝╚══════╝╚══════╝╚═╝░░╚═╝ v0.2.6
-
-Usage: ella [command]
-
-Commands:
-  - fmt Format one or many files in place using glob pattern
-        ella fmt <glob path>
-
-  - gen Generate code from a folder to a file and currently
-        supports .go and .ts extensions
-        ella gen <pkg> <output path to file> <search glob paths...>
-
-  - ver Print the version of ella
-
-example:
-  ella fmt ./path/to/*.ella
-  ella gen rpc ./path/to/output.go ./path/to/*.ella
-  ella gen rpc ./path/to/output.ts ./path/to/*.ella ./path/to/other/*.ella
-```
-
-# Schema
-
-## Comment
-
-comment can be created using `#`
-
-for example
-
-```
-# this is a comment
-```
-
-## Constant
-
-```
-const <identifier> = <identifier> | <value>
-```
-
-for example
-
-```
-const A = 1
-const B = 1_000_000
-const C = 1.23
-const D = "hello world"
-const E = 'hello world'
-const F = `hello
-world
-`
-const FileSize = 10gb
-const Timeout = 2s
-
-const RefFileSize = FileSize
-```
-
-## Enum
-
-```
-enum <identifier> {
-    <identifier> = <integer number>
-    <identifier>
-}
-```
-
-for example
-
-```
-enum UserRole {
-    # _ skip the generation but keeps the order
-    _ = 1
-    Root
-    Normal
-}
-```
-
-## Model
-
-```
-model <identifer> {
-    # for extending the model
-    ...<model's identifer>
-    <identifier>: <type> {
-        <identifier> = <value> | <const identifer>
-    }
-}
-```
-
-## Service
-
-```
-service <Http | Rpc><identifer> {
-    <identifier> (<identifer>: <type>) => (<identifer>: <type>) {
-        <identifider> = <value> | <const identifer>
-    }
-}
-
-# for example:
-
-service HttpUserService {
-    GetById(id: string) => (user: User)
-    Create(name: string) => (user: User)
-}
-```
-
-## HTTP Service Methods
-
-Ella supports 6 powerful communication patterns for HTTP services:
-
-| Method Type         | Input       | Output             | Use Case                                    |
-| ------------------- | ----------- | ------------------ | ------------------------------------------- |
-| 🔄 **JSON-JSON**    | JSON        | JSON               | Standard API calls                          |
-| 📦 **JSON-Binary**  | JSON        | Binary             | File downloads, media streaming             |
-| 📡 **JSON-SSE**     | JSON        | Server-Sent Events | Real-time updates, notifications            |
-| 📤 **Files-JSON**   | File Upload | JSON               | Upload processing with metadata return      |
-| 📥 **Files-Binary** | File Upload | Binary             | Process uploads and return binary data      |
-| 📊 **Files-SSE**    | File Upload | Server-Sent Events | Upload progress tracking, processing events |
-
-## RPC Service Methods
-
-RPC services focus on simplicity with a single communication pattern:
-
-| Method Type      | Input | Output | Use Case                       |
-| ---------------- | ----- | ------ | ------------------------------ |
-| 🔌 **JSON-JSON** | JSON  | JSON   | Internal service communication |
-
-> For more examples of these method types, check the e2e folder
-
-> For more examples, please look into e2e folder
-
-## Identifier
-
-there are 2 types of identifiers, camelCase and PascalCase. Basically all the args and returns names must be camelCase (first char must be lowercase) and all other identifer must be PascalCase (first char must be uppercase)
-
-## Custom Error
-
-defining a custom error that can be safely used over the network. Code is optional. Code has to be unique. If Code is not defined, the compiler will assign a unique Id.
-
-```
-error <identifer> { Code = <Integer> Msg = "" }
-```
-
-## Type
-
-type can be either the following list or refer to Model's identifer
-
-```
-int8, int16, int32, int64
-uint8, uint16, uint32, uint64
-float32, float64
-string
-bool
-timestamp
-any
-file
-[]<type>
-map<type, type>
-```
-
-## Value
-
-Literal values for constants and defaults:
-Numbers: 1, 1.2
-
-- Strings: "hello", 'hello', `hello`
-- Booleans: true, false
-- Durations: 1ns, 1us, 1ms, 1s, 1m, 1h
-- Sizes: 1b, 1kb, 1mb, 1gb, 1tb, 1pb, 1eb
-- Null: null
+MIT — see [LICENSE](LICENSE) for details.

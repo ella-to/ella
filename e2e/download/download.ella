@@ -1,3 +1,0 @@
-service HttpDownloadService {
-    Get() => (asset: stream []byte)
-}

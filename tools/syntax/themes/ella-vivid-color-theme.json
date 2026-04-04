@@ -1,0 +1,161 @@
+{
+  "name": "Ella Vivid",
+  "type": "dark",
+  "colors": {
+    "editor.background": "#101418",
+    "editor.foreground": "#E6EEF5",
+    "editorLineNumber.foreground": "#4C5966",
+    "editorLineNumber.activeForeground": "#C9D7E3",
+    "editorCursor.foreground": "#FFD166",
+    "editor.selectionBackground": "#24496A",
+    "editor.inactiveSelectionBackground": "#1C344A"
+  },
+  "tokenColors": [
+    {
+      "name": "Comments",
+      "scope": [
+        "comment.line.number-sign.ella"
+      ],
+      "settings": {
+        "foreground": "#7F8A96"
+      }
+    },
+    {
+      "name": "Declaration Keywords",
+      "scope": [
+        "keyword.declaration.constant.ella",
+        "keyword.declaration.enum.ella",
+        "keyword.declaration.model.ella",
+        "keyword.declaration.service.ella",
+        "keyword.declaration.error.ella"
+      ],
+      "settings": {
+        "foreground": "#FFFFFF",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "Const Definitions",
+      "scope": [
+        "variable.other.constant.ella"
+      ],
+      "settings": {
+        "foreground": "#4ADE80",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "Enum Definitions",
+      "scope": [
+        "entity.name.type.enum.ella",
+        "variable.other.enummember.ella"
+      ],
+      "settings": {
+        "foreground": "#A78BFA",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "Model Definitions",
+      "scope": [
+        "entity.name.type.model.ella"
+      ],
+      "settings": {
+        "foreground": "#38BDF8",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "Service Definitions",
+      "scope": [
+        "entity.name.type.service.ella",
+        "entity.name.function.service.ella",
+        "keyword.operator.arrow.service.ella"
+      ],
+      "settings": {
+        "foreground": "#FBBF24",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "Error Definitions",
+      "scope": [
+        "entity.name.type.error.ella"
+      ],
+      "settings": {
+        "foreground": "#FB7185",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "Primitive Types",
+      "scope": [
+        "storage.type.primitive.ella",
+        "storage.type.collection.ella",
+        "keyword.operator.array.ella"
+      ],
+      "settings": {
+        "foreground": "#EF4444"
+      }
+    },
+    {
+      "name": "Named Types",
+      "scope": [
+        "support.type.named.ella"
+      ],
+      "settings": {
+        "foreground": "#22C55E"
+      }
+    },
+    {
+      "name": "Field And Parameter Names",
+      "scope": [
+        "variable.other.member.ella",
+        "variable.parameter.ella",
+        "variable.parameter.interpolation.ella",
+        "variable.other.member.error.ella"
+      ],
+      "settings": {
+        "foreground": "#F472B6"
+      }
+    },
+    {
+      "name": "Strings",
+      "scope": [
+        "string.quoted.double.ella"
+      ],
+      "settings": {
+        "foreground": "#F9FA8F"
+      }
+    },
+    {
+      "name": "Numbers",
+      "scope": [
+        "constant.numeric.ella",
+        "constant.numeric.unit.ella"
+      ],
+      "settings": {
+        "foreground": "#F97316"
+      }
+    },
+    {
+      "name": "Operators",
+      "scope": [
+        "keyword.operator.arrow.ella",
+        "keyword.operator.assignment.ella",
+        "keyword.operator.type.ella",
+        "keyword.operator.spread.ella",
+        "punctuation.separator.comma.ella",
+        "punctuation.section.parens.begin.ella",
+        "punctuation.section.parens.end.ella",
+        "punctuation.section.braces.begin.ella",
+        "punctuation.section.braces.end.ella",
+        "punctuation.definition.type.begin.ella",
+        "punctuation.definition.type.end.ella"
+      ],
+      "settings": {
+        "foreground": "#E2E8F0"
+      }
+    }
+  ]
+}

@@ -1,0 +1,48 @@
+{
+  "name": "ella-syntax",
+  "displayName": "Ella Syntax",
+  "description": "Syntax highlighting for Ella schema files with a vivid companion theme.",
+  "version": "0.0.1",
+  "publisher": "ella-compiler",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/ella-to/ella"
+  },
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Programming Languages",
+    "Themes"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "ella",
+        "aliases": [
+          "Ella",
+          "ella"
+        ],
+        "extensions": [
+          ".ella"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "ella",
+        "scopeName": "source.ella",
+        "path": "./syntaxes/ella.tmLanguage.json"
+      }
+    ],
+    "themes": [
+      {
+        "label": "Ella Vivid",
+        "uiTheme": "vs-dark",
+        "path": "./themes/ella-vivid-color-theme.json"
+      }
+    ]
+  }
+}
