@@ -25,7 +25,7 @@ You define your models, enums, services, and errors in one place, and ella gener
 ## Installation
 
 ```bash
-go install ella.to/ella@latest
+go install ella.to/ella@v0.3.0
 ```
 
 ## Commands
