@@ -18,7 +18,7 @@
 
 ## What Is It
 
-Ella takes `.ella` schema files and generates type-safe client/server code for Go, TypeScript type definitions, and WASM bindings. Think of it like gRPC or Protocol Buffers, but with a much simpler syntax that reads like pseudocode.
+Ella takes `.ella` schema files and generates type-safe client/server code for Go, TypeScript clients and type definitions, and WASM bindings. Think of it like gRPC or Protocol Buffers, but with a much simpler syntax that reads like pseudocode.
 
 You define your models, enums, services, and errors in one place, and ella generates everything you need to call those services from Go backends, TypeScript frontends, or browser WASM modules.
 
@@ -40,8 +40,11 @@ ella gen schema "./schema/output.gen.go" "./schema/src/*.ella"
 # Generate Go code with WASM extensions (for browser clients)
 ella gen schema --allow-ext "./schema/output.gen_js.go" "./schema/src/*.ella"
 
-# Generate TypeScript type definitions
+# Generate TypeScript type definitions (.d.ts)
 ella gen schema "./web/src/schema.d.ts" "./schema/src/*.ella"
+
+# Generate TypeScript runtime client (.ts)
+ella gen schema "./web/src/schema.ts" "./schema/src/*.ella"
 
 # Print AST for debugging
 ella gen schema --debug "./schema/output.gen.go" "./schema/src/*.ella"
@@ -53,7 +56,8 @@ ella ver
 The output format is determined by the file extension of the output path:
 - `.go` — Go structs, interfaces, JSON-RPC client/server code
 - `_js.go` — Go WASM bindings (use `--allow-ext` flag)
-- `.ts` / `.d.ts` — TypeScript type definitions and interfaces
+- `.d.ts` — TypeScript declarations (types/interfaces for WASM usage)
+- `.ts` — TypeScript runtime client (fetch JSON-RPC helper + `create<Service>` factories + models/enums)
 
 ## Schema Language
 
@@ -182,11 +186,41 @@ The Go output includes:
 
 ### TypeScript
 
-The TypeScript output includes:
+For `.d.ts` output:
 - Interface definitions for all models
 - Enum types as string union types
 - Service interfaces with `Promise<T>` return types
 - Support for `AbortSignal`, caching, and timeout options
+
+For `.ts` output:
+- `createFetchJsonRpc(host, options)` helper compatible with `ella.to/jsonrpc` request/response format
+- `create<Service>(conn)` factory functions that return async service clients
+- Runtime constants and enum values
+- `EllaRPCError` plus typed error guards for schema-defined errors
+
+Example runtime client usage:
+
+```ts
+import {
+    createFetchJsonRpc,
+    createUserService,
+    isErrUserNotFound,
+} from "./schema"
+
+const conn = createFetchJsonRpc("https://api.example.com/rpc")
+const users = createUserService(conn)
+
+try {
+    const user = await users.getById("123")
+    console.log(user)
+} catch (err) {
+    if (isErrUserNotFound(err)) {
+        console.error("user not found")
+    } else {
+        throw err
+    }
+}
+```
 
 ### WASM
 
@@ -203,6 +237,19 @@ The WASM output (with `--allow-ext`) generates Go code that:
 ```bash
 ella fmt "./schema/src/*.ella"
 ```
+
+## Syntax Highlighting
+
+Ella includes a VS Code syntax extension in `tools/syntax`.
+
+Install from this repository:
+
+```bash
+cd tools/syntax
+code --install-extension ella-syntax-0.0.1.vsix --force
+```
+
+After installation, run `Developer: Reload Window` from the VS Code command palette.
 
 ## License
 
