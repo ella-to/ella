@@ -290,10 +290,10 @@ func (dmt *DeclMapType) String() string {
 }
 
 type DeclModelField struct {
-	Name    *IdenExpr
-	Type    DeclType
+	Name     *IdenExpr
+	Type     DeclType
 	Optional bool
-	Options []*AssignmentStmt
+	Options  []*AssignmentStmt
 }
 
 func (dmf *DeclModelField) String() string {
