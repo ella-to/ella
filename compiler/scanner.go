@@ -76,7 +76,8 @@ func (s *Scanner) Scan() (*Token, error) {
 			ch, pos = s.rs.Next()
 			return newToken(EQUAL, pos, string(ch)), nil
 		case '.':
-			return newToken(DOT, pos, lit), nil
+			ch, pos = s.rs.Next()
+			return newToken(DOT, pos, string(ch)), nil
 		case '\'':
 			_, pos = s.rs.Next()
 			lit, _, _ = s.rs.AcceptRunUntil("'\n\r")
@@ -102,13 +103,18 @@ func (s *Scanner) Scan() (*Token, error) {
 			s.rs.Next()
 			return newToken(CONST_STRING_BACKTICK_QOUTE, pos, lit), nil
 		default:
-			tok, err := s.ScanNumber()
-			if err != nil {
-				return nil, err
-			}
-			if tok.Type != UNKNOWN {
-				s.rs.CleanBuffer()
-				return tok, nil
+			var tok *Token
+			var err error
+			// Only attempt numeric scanning when the token can actually begin with a number.
+			if strings.ContainsRune("+-0123456789", ch) {
+				tok, err = s.ScanNumber()
+				if err != nil {
+					return nil, err
+				}
+				if tok.Type != UNKNOWN {
+					s.rs.CleanBuffer()
+					return tok, nil
+				}
 			}
 
 			tok = s.ScanReservedWord()

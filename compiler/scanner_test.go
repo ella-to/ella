@@ -186,3 +186,36 @@ func TestRandomStuff(t *testing.T) {
 		runTestScanner(t, tc.input, tc.expected)
 	}
 }
+
+func TestScanEnumUnderscoreMember(t *testing.T) {
+	input := `enum AccountType {
+	_ = 0
+	Stripe
+}`
+
+	scanner := compiler.NewScanner(strings.NewReader(input), "")
+	var foundUnderscore bool
+
+	for {
+		tok, err := scanner.Scan()
+		if err != nil {
+			t.Fatalf("scan error: %v", err)
+		}
+
+		if tok.Type == compiler.ERROR {
+			t.Fatalf("unexpected ERROR token at line %d, column %d: %q", tok.Pos.Line, tok.Pos.Column, tok.Lit)
+		}
+
+		if tok.Type == compiler.IDENTIFIER && tok.Lit == "_" {
+			foundUnderscore = true
+		}
+
+		if tok.Type == compiler.EOF {
+			break
+		}
+	}
+
+	if !foundUnderscore {
+		t.Fatal("expected '_' enum member to be scanned as IDENTIFIER")
+	}
+}
