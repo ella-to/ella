@@ -752,7 +752,7 @@ func (g *GoGenerator) generateModel(m *DeclModel) ([]ast.Decl, error) {
 
 	// Handle fields
 	for _, f := range m.Fields {
-		fieldType, err := g.declTypeToGoType(f.Type)
+		fieldType, err := g.declTypeToGoModelFieldType(f.Type, false)
 		if err != nil {
 			return nil, err
 		}
@@ -781,6 +781,37 @@ func (g *GoGenerator) generateModel(m *DeclModel) ([]ast.Decl, error) {
 			},
 		},
 	}, nil
+}
+
+func (g *GoGenerator) declTypeToGoModelFieldType(t DeclType, inCollection bool) (ast.Expr, error) {
+	switch dt := t.(type) {
+	case *DeclArrayType:
+		elemType, err := g.declTypeToGoModelFieldType(dt.Type.(DeclType), true)
+		if err != nil {
+			return nil, err
+		}
+		return &ast.ArrayType{Elt: elemType}, nil
+	case *DeclMapType:
+		keyType, err := g.declTypeToGoType(dt.KeyType.(DeclType))
+		if err != nil {
+			return nil, err
+		}
+		valueType, err := g.declTypeToGoModelFieldType(dt.ValueType.(DeclType), true)
+		if err != nil {
+			return nil, err
+		}
+		return &ast.MapType{Key: keyType, Value: valueType}, nil
+	case *DeclCustomType:
+		if _, ok := g.enums[dt.Name.Name]; ok {
+			return ast.NewIdent(dt.Name.Name), nil
+		}
+		if inCollection {
+			return &ast.StarExpr{X: ast.NewIdent(dt.Name.Name)}, nil
+		}
+		return ast.NewIdent(dt.Name.Name), nil
+	default:
+		return g.declTypeToGoType(t)
+	}
 }
 
 // toJSONTag creates JSON tag with camelCase naming
@@ -1409,7 +1440,7 @@ func (g *GoGenerator) generateClientMethod(s *DeclService, m *DeclServiceMethod,
 	}
 
 	stmts = append(stmts, &ast.AssignStmt{
-		Lhs: []ast.Expr{ast.NewIdent("Results"), ast.NewIdent("err")},
+		Lhs: []ast.Expr{ast.NewIdent("_Results"), ast.NewIdent("err")},
 		Tok: token.DEFINE,
 		Rhs: []ast.Expr{
 			&ast.CallExpr{
@@ -1449,7 +1480,7 @@ func (g *GoGenerator) generateClientMethod(s *DeclService, m *DeclServiceMethod,
 	// Check results length
 	stmts = append(stmts, &ast.IfStmt{
 		Cond: &ast.BinaryExpr{
-			X:  &ast.CallExpr{Fun: ast.NewIdent("len"), Args: []ast.Expr{ast.NewIdent("Results")}},
+			X:  &ast.CallExpr{Fun: ast.NewIdent("len"), Args: []ast.Expr{ast.NewIdent("_Results")}},
 			Op: token.NEQ,
 			Y:  &ast.BasicLit{Kind: token.INT, Value: "1"},
 		},
@@ -1461,7 +1492,7 @@ func (g *GoGenerator) generateClientMethod(s *DeclService, m *DeclServiceMethod,
 						Args: []ast.Expr{
 							&ast.SelectorExpr{X: ast.NewIdent("jsonrpc"), Sel: ast.NewIdent("InternalError")},
 							&ast.BasicLit{Kind: token.STRING, Value: `"expected 1 result, got %d"`},
-							&ast.CallExpr{Fun: ast.NewIdent("len"), Args: []ast.Expr{ast.NewIdent("Results")}},
+							&ast.CallExpr{Fun: ast.NewIdent("len"), Args: []ast.Expr{ast.NewIdent("_Results")}},
 						},
 					}),
 				},
@@ -1471,22 +1502,22 @@ func (g *GoGenerator) generateClientMethod(s *DeclService, m *DeclServiceMethod,
 
 	// Get Result
 	stmts = append(stmts, &ast.AssignStmt{
-		Lhs: []ast.Expr{ast.NewIdent("Result")},
+		Lhs: []ast.Expr{ast.NewIdent("_Result")},
 		Tok: token.DEFINE,
-		Rhs: []ast.Expr{&ast.IndexExpr{X: ast.NewIdent("Results"), Index: &ast.BasicLit{Kind: token.INT, Value: "0"}}},
+		Rhs: []ast.Expr{&ast.IndexExpr{X: ast.NewIdent("_Results"), Index: &ast.BasicLit{Kind: token.INT, Value: "0"}}},
 	})
 
 	// Check error in result
 	stmts = append(stmts, &ast.IfStmt{
 		Cond: &ast.BinaryExpr{
-			X:  &ast.SelectorExpr{X: ast.NewIdent("Result"), Sel: ast.NewIdent("Error")},
+			X:  &ast.SelectorExpr{X: ast.NewIdent("_Result"), Sel: ast.NewIdent("Error")},
 			Op: token.NEQ,
 			Y:  ast.NewIdent("nil"),
 		},
 		Body: &ast.BlockStmt{
 			List: []ast.Stmt{
 				&ast.ReturnStmt{
-					Results: append(g.buildZeroReturns(m.Returns), &ast.SelectorExpr{X: ast.NewIdent("Result"), Sel: ast.NewIdent("Error")}),
+					Results: append(g.buildZeroReturns(m.Returns), &ast.SelectorExpr{X: ast.NewIdent("_Result"), Sel: ast.NewIdent("Error")}),
 				},
 			},
 		},
@@ -1524,7 +1555,7 @@ func (g *GoGenerator) generateClientMethod(s *DeclService, m *DeclServiceMethod,
 				&ast.CallExpr{
 					Fun: &ast.SelectorExpr{X: ast.NewIdent("json"), Sel: ast.NewIdent("Unmarshal")},
 					Args: []ast.Expr{
-						&ast.SelectorExpr{X: ast.NewIdent("Result"), Sel: ast.NewIdent("Result")},
+						&ast.SelectorExpr{X: ast.NewIdent("_Result"), Sel: ast.NewIdent("Result")},
 						&ast.UnaryExpr{Op: token.AND, X: ast.NewIdent("Output")},
 					},
 				},

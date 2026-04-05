@@ -380,6 +380,50 @@ model User {
 	t.Logf("Generated code:\n%s", code)
 }
 
+func TestGoGenerator_ModelCollectionCustomTypesPointerized(t *testing.T) {
+	source := `enum Status {
+	Active
+}
+
+model Address {
+	Street: string
+}
+
+model User {
+	AddressList: []Address
+	AddressById: map<string, Address>
+	StatusList: []Status
+	StatusById: map<string, Status>
+}
+`
+
+	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	parser := NewParser(scanner)
+	program, err := parser.Parse()
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	gen := NewGoGenerator(program, "main")
+	code, err := gen.Generate()
+	if err != nil {
+		t.Fatalf("generate error: %v", err)
+	}
+
+	if !regexp.MustCompile(`AddressList\s+\[\]\*Address`).MatchString(code) {
+		t.Fatalf("expected model array of custom type to be pointerized, got:\n%s", code)
+	}
+	if !regexp.MustCompile(`AddressById\s+map\[string\]\*Address`).MatchString(code) {
+		t.Fatalf("expected model map value custom type to be pointerized, got:\n%s", code)
+	}
+	if !regexp.MustCompile(`StatusList\s+\[\]Status`).MatchString(code) {
+		t.Fatalf("expected enum arrays to stay value type, got:\n%s", code)
+	}
+	if !regexp.MustCompile(`StatusById\s+map\[string\]Status`).MatchString(code) {
+		t.Fatalf("expected enum map values to stay value type, got:\n%s", code)
+	}
+}
+
 func TestGoGenerator_Service(t *testing.T) {
 	source := `service GreetingService {
 	SayHello(name: string) => (result: string)
