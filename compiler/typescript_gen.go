@@ -714,7 +714,11 @@ func (g *TypeScriptGenerator) generateModel(sb *strings.Builder, m *DeclModel) {
 	for _, f := range m.Fields {
 		fieldName := tsToCamelCase(f.Name.Name)
 		fieldType := g.declTypeToTSType(f.Type)
-		sb.WriteString(fmt.Sprintf("  %s: %s;\n", fieldName, fieldType))
+		optionalMarker := ""
+		if f.Optional {
+			optionalMarker = "?"
+		}
+		sb.WriteString(fmt.Sprintf("  %s%s: %s;\n", fieldName, optionalMarker, fieldType))
 	}
 
 	sb.WriteString("}\n\n")

@@ -156,3 +156,33 @@ error ErrUserNotFound { Code = 404 Msg = "user not found" }
 		t.Fatalf("expected per-error type guard in output, got:\n%s", code)
 	}
 }
+
+func TestTypeScriptGenerator_ModelOptionalFields(t *testing.T) {
+	source := `model Address {
+	Street: string
+}
+
+model User {
+	Name?: string
+	Address?: Address
+	Tags?: []string
+}
+`
+
+	program := parseProgramForTypeScriptTest(t, source)
+	gen := NewTypeScriptGenerator(program)
+	code, err := gen.Generate()
+	if err != nil {
+		t.Fatalf("generate error: %v", err)
+	}
+
+	if !strings.Contains(code, "name?: string;") {
+		t.Fatalf("expected optional string field in output, got:\n%s", code)
+	}
+	if !strings.Contains(code, "address?: Address;") {
+		t.Fatalf("expected optional model field in output, got:\n%s", code)
+	}
+	if !strings.Contains(code, "tags?: string[];") {
+		t.Fatalf("expected optional array field in output, got:\n%s", code)
+	}
+}

@@ -756,8 +756,11 @@ func (g *GoGenerator) generateModel(m *DeclModel) ([]ast.Decl, error) {
 		if err != nil {
 			return nil, err
 		}
+		if f.Optional {
+			fieldType = &ast.StarExpr{X: fieldType}
+		}
 
-		jsonTag := g.toJSONTag(f.Name.Name, f.Options)
+		jsonTag := g.toJSONTag(f.Name.Name, f.Optional, f.Options)
 
 		field := &ast.Field{
 			Names: []*ast.Ident{ast.NewIdent(f.Name.Name)},
@@ -781,7 +784,7 @@ func (g *GoGenerator) generateModel(m *DeclModel) ([]ast.Decl, error) {
 }
 
 // toJSONTag creates JSON tag with camelCase naming
-func (g *GoGenerator) toJSONTag(name string, options []*AssignmentStmt) string {
+func (g *GoGenerator) toJSONTag(name string, optional bool, options []*AssignmentStmt) string {
 	// Check if json option is explicitly set to false
 	for _, opt := range options {
 		if strings.ToLower(opt.Name.Name) == "json" {
@@ -789,6 +792,9 @@ func (g *GoGenerator) toJSONTag(name string, options []*AssignmentStmt) string {
 				return "-"
 			}
 		}
+	}
+	if optional {
+		return toCamelCase(name) + ",omitempty"
 	}
 	return toCamelCase(name)
 }
@@ -845,9 +851,9 @@ func (g *GoGenerator) declTypeToGoType(t DeclType) (ast.Expr, error) {
 			return ast.NewIdent(typeName), nil
 		}
 
-		// Check if it's a model (use pointer)
+		// Check if it's a model
 		if _, ok := g.models[typeName]; ok {
-			return &ast.StarExpr{X: ast.NewIdent(typeName)}, nil
+			return ast.NewIdent(typeName), nil
 		}
 
 		// Default to the type name as-is
@@ -927,7 +933,7 @@ func (g *GoGenerator) methodToFuncType(m *DeclServiceMethod) (*ast.FuncType, err
 	}
 
 	for _, arg := range m.Args {
-		argType, err := g.declTypeToGoType(arg.Type)
+		argType, err := g.declTypeToGoArgType(arg.Type)
 		if err != nil {
 			return nil, err
 		}
@@ -940,7 +946,7 @@ func (g *GoGenerator) methodToFuncType(m *DeclServiceMethod) (*ast.FuncType, err
 	// Results: return values + error
 	results := &ast.FieldList{List: []*ast.Field{}}
 	for _, ret := range m.Returns {
-		retType, err := g.declTypeToGoType(ret.Type)
+		retType, err := g.declTypeToGoReturnType(ret.Type)
 		if err != nil {
 			return nil, err
 		}
@@ -1015,7 +1021,7 @@ func (g *GoGenerator) generateServerMethod(s *DeclService, m *DeclServiceMethod,
 	if len(m.Args) > 0 {
 		inputFields := &ast.FieldList{List: []*ast.Field{}}
 		for _, arg := range m.Args {
-			argType, _ := g.declTypeToGoType(arg.Type)
+			argType, _ := g.declTypeToGoArgType(arg.Type)
 			inputFields.List = append(inputFields.List, &ast.Field{
 				Names: []*ast.Ident{ast.NewIdent(toTitle(arg.Name.Name))},
 				Type:  argType,
@@ -1084,7 +1090,7 @@ func (g *GoGenerator) generateServerMethod(s *DeclService, m *DeclServiceMethod,
 	if len(m.Returns) > 0 {
 		outputFields := &ast.FieldList{List: []*ast.Field{}}
 		for _, ret := range m.Returns {
-			retType, _ := g.declTypeToGoType(ret.Type)
+			retType, _ := g.declTypeToGoReturnType(ret.Type)
 			outputFields.List = append(outputFields.List, &ast.Field{
 				Names: []*ast.Ident{ast.NewIdent(toTitle(ret.Name.Name))},
 				Type:  retType,
@@ -1364,7 +1370,7 @@ func (g *GoGenerator) generateClientMethod(s *DeclService, m *DeclServiceMethod,
 	if len(m.Args) > 0 {
 		inputFields := &ast.FieldList{List: []*ast.Field{}}
 		for _, arg := range m.Args {
-			argType, _ := g.declTypeToGoType(arg.Type)
+			argType, _ := g.declTypeToGoArgType(arg.Type)
 			inputFields.List = append(inputFields.List, &ast.Field{
 				Names: []*ast.Ident{ast.NewIdent(toTitle(arg.Name.Name))},
 				Type:  argType,
@@ -1490,7 +1496,7 @@ func (g *GoGenerator) generateClientMethod(s *DeclService, m *DeclServiceMethod,
 	if len(m.Returns) > 0 {
 		outputFields := &ast.FieldList{List: []*ast.Field{}}
 		for _, ret := range m.Returns {
-			retType, _ := g.declTypeToGoType(ret.Type)
+			retType, _ := g.declTypeToGoReturnType(ret.Type)
 			outputFields.List = append(outputFields.List, &ast.Field{
 				Names: []*ast.Ident{ast.NewIdent(toTitle(ret.Name.Name))},
 				Type:  retType,
@@ -1567,7 +1573,7 @@ func (g *GoGenerator) generateClientMethod(s *DeclService, m *DeclServiceMethod,
 		},
 	}
 	for _, arg := range m.Args {
-		argType, _ := g.declTypeToGoType(arg.Type)
+		argType, _ := g.declTypeToGoArgType(arg.Type)
 		params.List = append(params.List, &ast.Field{
 			Names: []*ast.Ident{ast.NewIdent(arg.Name.Name)},
 			Type:  argType,
@@ -1576,7 +1582,7 @@ func (g *GoGenerator) generateClientMethod(s *DeclService, m *DeclServiceMethod,
 
 	results := &ast.FieldList{List: []*ast.Field{}}
 	for _, ret := range m.Returns {
-		retType, _ := g.declTypeToGoType(ret.Type)
+		retType, _ := g.declTypeToGoReturnType(ret.Type)
 		results.List = append(results.List, &ast.Field{Type: retType})
 	}
 	results.List = append(results.List, &ast.Field{Type: ast.NewIdent("error")})
@@ -1599,9 +1605,61 @@ func (g *GoGenerator) generateClientMethod(s *DeclService, m *DeclServiceMethod,
 func (g *GoGenerator) buildZeroReturns(returns []*DeclNameTypePair) []ast.Expr {
 	zeros := []ast.Expr{}
 	for _, ret := range returns {
-		zeros = append(zeros, g.zeroValue(ret.Type))
+		zeros = append(zeros, g.zeroValueForReturn(ret.Type))
 	}
 	return zeros
+}
+
+func (g *GoGenerator) declTypeToGoReturnType(t DeclType) (ast.Expr, error) {
+	return g.declTypeToGoServiceType(t)
+}
+
+func (g *GoGenerator) declTypeToGoArgType(t DeclType) (ast.Expr, error) {
+	return g.declTypeToGoServiceType(t)
+}
+
+func (g *GoGenerator) declTypeToGoServiceType(t DeclType) (ast.Expr, error) {
+	switch dt := t.(type) {
+	case *DeclArrayType:
+		elemType, err := g.declTypeToGoServiceType(dt.Type.(DeclType))
+		if err != nil {
+			return nil, err
+		}
+		return &ast.ArrayType{Elt: elemType}, nil
+	case *DeclMapType:
+		keyType, err := g.declTypeToGoType(dt.KeyType.(DeclType))
+		if err != nil {
+			return nil, err
+		}
+		valueType, err := g.declTypeToGoServiceType(dt.ValueType.(DeclType))
+		if err != nil {
+			return nil, err
+		}
+		return &ast.MapType{Key: keyType, Value: valueType}, nil
+	case *DeclCustomType:
+		if _, isEnum := g.enums[dt.Name.Name]; isEnum {
+			return ast.NewIdent(dt.Name.Name), nil
+		}
+		return &ast.StarExpr{X: ast.NewIdent(dt.Name.Name)}, nil
+	default:
+		return g.declTypeToGoType(t)
+	}
+}
+
+func (g *GoGenerator) zeroValueForReturn(t DeclType) ast.Expr {
+	if _, isArray := t.(*DeclArrayType); isArray {
+		return ast.NewIdent("nil")
+	}
+	if _, isMap := t.(*DeclMapType); isMap {
+		return ast.NewIdent("nil")
+	}
+	if dt, isCustom := t.(*DeclCustomType); isCustom {
+		if _, isEnum := g.enums[dt.Name.Name]; isEnum {
+			return g.zeroValue(t)
+		}
+		return ast.NewIdent("nil")
+	}
+	return g.zeroValue(t)
 }
 
 func (g *GoGenerator) zeroValue(t DeclType) ast.Expr {

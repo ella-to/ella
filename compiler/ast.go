@@ -292,10 +292,14 @@ func (dmt *DeclMapType) String() string {
 type DeclModelField struct {
 	Name    *IdenExpr
 	Type    DeclType
+	Optional bool
 	Options []*AssignmentStmt
 }
 
 func (dmf *DeclModelField) String() string {
+	if dmf.Optional {
+		return fmt.Sprintf("%s?: %s", dmf.Name.String(), dmf.Type.String())
+	}
 	return fmt.Sprintf("%s: %s", dmf.Name.String(), dmf.Type.String())
 }
 

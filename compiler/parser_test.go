@@ -138,6 +138,24 @@ model Person {
 	runParserTest(t, input, output)
 }
 
+func TestModelParser_OptionalField(t *testing.T) {
+	input := `
+model Person {
+	name?: string
+	age: number
+}
+`
+
+	output := `
+model Person {
+	name?: string
+	age: number
+}
+`
+
+	runParserTest(t, input, output)
+}
+
 func TestCommentParser(t *testing.T) {
 	input := `
 # This is a comment

@@ -461,6 +461,13 @@ func (p *Parser) parseDeclModelField() (*DeclModelField, error) {
 	if err != nil {
 		return nil, err
 	}
+	if colonTok.Type == OPTIONAL {
+		declModelField.Optional = true
+		colonTok, err = p.next()
+		if err != nil {
+			return nil, err
+		}
+	}
 	if colonTok.Type != COLON {
 		return nil, NewError(colonTok, "expected ':' after identifier in model field declaration, got %s", colonTok.Type.String())
 	}

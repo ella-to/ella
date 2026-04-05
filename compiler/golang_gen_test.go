@@ -1,6 +1,7 @@
 package compiler
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -319,13 +320,61 @@ model User {
 	if !strings.Contains(code, "Status  Status") {
 		t.Errorf("expected Status field with Status type in output, got:\n%s", code)
 	}
-	// Check that model reference is a pointer
-	if !strings.Contains(code, "Address *Address") {
-		t.Errorf("expected Address field with *Address type in output, got:\n%s", code)
+	// Check that model reference is a concrete value type
+	if !strings.Contains(code, "Address Address") {
+		t.Errorf("expected Address field with Address type in output, got:\n%s", code)
 	}
 	// Check enum const names use underscore
 	if !strings.Contains(code, "Status_Active") {
 		t.Errorf("expected Status_Active const in output, got:\n%s", code)
+	}
+
+	t.Logf("Generated code:\n%s", code)
+}
+
+func TestGoGenerator_ModelOptionalFields(t *testing.T) {
+	source := `model Address {
+	Street: string
+}
+
+model User {
+	Name?: string
+	Address?: Address
+	Tags?: []string
+	Metadata?: map<string, string>
+}
+`
+
+	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	parser := NewParser(scanner)
+	program, err := parser.Parse()
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	gen := NewGoGenerator(program, "main")
+	code, err := gen.Generate()
+	if err != nil {
+		t.Fatalf("generate error: %v", err)
+	}
+
+	if !regexp.MustCompile(`Name\s+\*string`).MatchString(code) {
+		t.Errorf("expected optional string pointer field, got:\n%s", code)
+	}
+	if !regexp.MustCompile(`Address\s+\*Address`).MatchString(code) {
+		t.Errorf("expected optional model pointer field, got:\n%s", code)
+	}
+	if !regexp.MustCompile(`Tags\s+\*\[\]string`).MatchString(code) {
+		t.Errorf("expected optional slice pointer field, got:\n%s", code)
+	}
+	if !regexp.MustCompile(`Metadata\s+\*map\[string\]string`).MatchString(code) {
+		t.Errorf("expected optional map pointer field, got:\n%s", code)
+	}
+	if !strings.Contains(code, `json:"name,omitempty"`) {
+		t.Errorf("expected omitempty tag for optional field, got:\n%s", code)
+	}
+	if !strings.Contains(code, `json:"address,omitempty"`) {
+		t.Errorf("expected omitempty tag for optional model field, got:\n%s", code)
 	}
 
 	t.Logf("Generated code:\n%s", code)
@@ -412,14 +461,117 @@ service RoleService {
 		t.Fatalf("expected GetRoleType client method in output, got:\n%s", code)
 	}
 	if !strings.Contains(code, "return 0, err") {
-		t.Errorf("expected numeric enum zero value return for GetRoleType, got:\n%s", code)
+		t.Errorf("expected enum zero value return for GetRoleType, got:\n%s", code)
 	}
 
 	if !strings.Contains(code, "func (c *roleServiceClient) GetRoleLabel(ctx context.Context, userId string) (RoleLabel, error)") {
 		t.Fatalf("expected GetRoleLabel client method in output, got:\n%s", code)
 	}
 	if !strings.Contains(code, `return "", err`) {
-		t.Errorf("expected string enum zero value return for GetRoleLabel, got:\n%s", code)
+		t.Errorf("expected string-enum zero value return for GetRoleLabel, got:\n%s", code)
+	}
+}
+
+func TestGoGenerator_ServiceArrayReturnUsesValueElements(t *testing.T) {
+	source := `enum RoleType {
+	Owner = 0
+}
+
+model Address {
+	Street: string
+}
+
+service RoleService {
+	ListRoles(userId: string) => (roles: []RoleType)
+	ListAddresses(userId: string) => (addresses: []Address)
+	AddressById(userId: string) => (addresses: map<string, Address>)
+}
+`
+
+	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	parser := NewParser(scanner)
+	program, err := parser.Parse()
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	gen := NewGoGenerator(program, "main")
+	code, err := gen.Generate()
+	if err != nil {
+		t.Fatalf("generate error: %v", err)
+	}
+
+	if !strings.Contains(code, "ListRoles(ctx context.Context, userId string) ([]RoleType, error)") {
+		t.Fatalf("expected []RoleType return type in service method, got:\n%s", code)
+	}
+	if strings.Contains(code, "[]*RoleType") {
+		t.Fatalf("did not expect pointer elements for enum arrays, got:\n%s", code)
+	}
+	if !strings.Contains(code, "ListAddresses(ctx context.Context, userId string) ([]*Address, error)") {
+		t.Fatalf("expected []*Address return type in service method, got:\n%s", code)
+	}
+	if !strings.Contains(code, "AddressById(ctx context.Context, userId string) (map[string]*Address, error)") {
+		t.Fatalf("expected map values to be pointerized for custom types, got:\n%s", code)
+	}
+}
+
+func TestGoGenerator_ServiceCustomReturnStillPointer(t *testing.T) {
+	source := `model Business {
+	Id: string
+}
+
+service BusinessService {
+	GetById(id: string) => (result: Business)
+}
+`
+
+	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	parser := NewParser(scanner)
+	program, err := parser.Parse()
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	gen := NewGoGenerator(program, "main")
+	code, err := gen.Generate()
+	if err != nil {
+		t.Fatalf("generate error: %v", err)
+	}
+
+	if !strings.Contains(code, "GetById(ctx context.Context, id string) (*Business, error)") {
+		t.Fatalf("expected custom model return as pointer, got:\n%s", code)
+	}
+}
+
+func TestGoGenerator_ServiceArgumentTypes(t *testing.T) {
+	source := `enum RoleType {
+	Owner = 0
+}
+
+model Business {
+	Id: string
+}
+
+service BusinessService {
+	Update (business: Business, roleType: RoleType, tags: []Business, byId: map<string, Business>)
+}
+`
+
+	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	parser := NewParser(scanner)
+	program, err := parser.Parse()
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	gen := NewGoGenerator(program, "main")
+	code, err := gen.Generate()
+	if err != nil {
+		t.Fatalf("generate error: %v", err)
+	}
+
+	if !strings.Contains(code, "Update(ctx context.Context, business *Business, roleType RoleType, tags []*Business, byId map[string]*Business) error") {
+		t.Fatalf("expected argument mapping (custom pointer, enum value, array/map with pointerized custom values) in service interface, got:\n%s", code)
 	}
 }
 
