@@ -11,9 +11,9 @@ func TestFormat(t *testing.T) {
 	input := `
 const MaxLogoAssetSize = 100kb
 const TimeoutLogoAsset = 1m
-const TopicBusinessCreated = "rentify.business.created"
-const TopicBusinessUpdated = "rentify.business.updated"
-const TopicBusinessDeleted = "rentify.business.deleted"
+const TopicBusinessCreated = "sample.business.created"
+const TopicBusinessUpdated = "sample.business.updated"
+const TopicBusinessDeleted = "sample.business.deleted"
 
 model Business {
     Id: string
@@ -45,9 +45,9 @@ service RpcBusinessService {
 
 	expected := `const MaxLogoAssetSize = 100kb
 const TimeoutLogoAsset = 1m
-const TopicBusinessCreated = "rentify.business.created"
-const TopicBusinessUpdated = "rentify.business.updated"
-const TopicBusinessDeleted = "rentify.business.deleted"
+const TopicBusinessCreated = "sample.business.created"
+const TopicBusinessUpdated = "sample.business.updated"
+const TopicBusinessDeleted = "sample.business.deleted"
 
 model Business {
 	Id: string

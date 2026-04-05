@@ -656,7 +656,7 @@ error ErrInvalidInput { Code = 400 Msg = "invalid input" }
 func TestGoGenerator_CompleteExample(t *testing.T) {
 	source := `const MaxLogoAssetSize = 100kb
 const TimeoutLogoAsset = 1m
-const TopicBusinessCreated = "rentify.business.created"
+const TopicBusinessCreated = "sample.business.created"
 
 enum Status {
 	Pending
