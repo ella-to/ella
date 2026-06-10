@@ -161,6 +161,50 @@ service UserService {
 
 Methods without a return clause produce no response body.
 
+#### Optional Arguments
+
+Method arguments can be marked optional with `?`, using the same syntax as optional model fields. Optional arguments must come after all required arguments:
+
+```ella
+service UserService {
+    List (query: string, limit?: int64, tags?: []string) => (users: []User)
+}
+
+service GroupService {
+    List (limit?: int64) => (groups: []Group)
+}
+```
+
+In **Go**, optional arguments become type-safe functional options. A single `With<Name>` function is generated per unique argument name and is shared by every method that declares an optional argument with that name — `WithLimit` below works for both `UserService.List` and `GroupService.List`:
+
+```go
+users, err := userClient.List(ctx, "active", WithLimit(50), WithTags([]string{"admin"}))
+groups, err := groupClient.List(ctx, WithLimit(10))
+```
+
+Because of this sharing, optional arguments with the same name must use the same type everywhere; the compiler reports an error otherwise.
+
+Server implementations receive the same variadic options and read them through the generated per-method options struct, where unset arguments are `nil`:
+
+```go
+func (s *server) List(ctx context.Context, query string, opts ...UserServiceListOption) ([]*User, error) {
+    options := NewUserServiceListOptions(opts...)
+    if options.Limit != nil {
+        // limit was provided
+    }
+    ...
+}
+```
+
+In **TypeScript** (both `.d.ts` and `.ts` outputs), optional arguments are grouped into an optional object parameter placed between the required arguments and the call options:
+
+```ts
+const users = await userService.list("active", { limit: 50, tags: ["admin"] })
+const groups = await groupService.list({ limit: 10 })
+```
+
+On the wire, unset optional arguments are omitted from the JSON-RPC params entirely, so Go and TypeScript clients and servers are fully interoperable.
+
 ### Errors
 
 Named errors with optional HTTP status codes:

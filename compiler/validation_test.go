@@ -73,6 +73,74 @@ model User { Name: string }
 	}
 }
 
+func TestValidator_OptionalArgBeforeRequired(t *testing.T) {
+	source := `service UserService {
+	List (limit?: int64, query: string) => (ids: []string)
+}
+`
+	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	parser := NewParser(scanner)
+	program, err := parser.Parse()
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	errors := ValidateProgram(program)
+	if len(errors) == 0 {
+		t.Fatal("expected validation error for required argument after optional")
+	}
+	if !strings.Contains(toError(t, errors[0]).Reason, "must be declared before optional arguments") {
+		t.Errorf("expected ordering error, got: %s", toError(t, errors[0]).Reason)
+	}
+}
+
+func TestValidator_OptionalArgTypeConflict(t *testing.T) {
+	source := `service UserService {
+	List (query: string, limit?: int64) => (ids: []string)
+}
+
+service GroupService {
+	List (limit?: string) => (ids: []string)
+}
+`
+	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	parser := NewParser(scanner)
+	program, err := parser.Parse()
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	errors := ValidateProgram(program)
+	if len(errors) == 0 {
+		t.Fatal("expected validation error for conflicting optional argument types")
+	}
+	if !strings.Contains(toError(t, errors[0]).Reason, "must share the same type") {
+		t.Errorf("expected shared type error, got: %s", toError(t, errors[0]).Reason)
+	}
+}
+
+func TestValidator_OptionalArgSameTypeAcrossServices(t *testing.T) {
+	source := `service UserService {
+	List (query: string, limit?: int64) => (ids: []string)
+}
+
+service GroupService {
+	List (limit?: int64) => (ids: []string)
+}
+`
+	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	parser := NewParser(scanner)
+	program, err := parser.Parse()
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	errors := ValidateProgram(program)
+	if len(errors) != 0 {
+		t.Fatalf("expected no validation errors for consistent optional argument types, got: %v", errors)
+	}
+}
+
 func TestValidator_DuplicateService(t *testing.T) {
 	source := `service Greeting { Hello() }
 service Greeting { Bye() }

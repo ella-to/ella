@@ -470,6 +470,76 @@ func TestGoGenerator_Service(t *testing.T) {
 	t.Logf("Generated code:\n%s", code)
 }
 
+func TestGoGenerator_ServiceOptionalArgs(t *testing.T) {
+	source := `service UserService {
+	List (query: string, limit?: int64, tags?: []string) => (ids: []string)
+	Create (name: string, limit?: int64) => (id: string)
+}
+
+service GroupService {
+	List (limit?: int64) => (ids: []string)
+}
+`
+	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	parser := NewParser(scanner)
+	program, err := parser.Parse()
+	if err != nil {
+		t.Fatalf("parse error: %v", err)
+	}
+
+	gen := NewGoGenerator(program, "main")
+	code, err := gen.Generate()
+	if err != nil {
+		t.Fatalf("generate error: %v", err)
+	}
+
+	// A single shared With function per unique optional argument name
+	if strings.Count(code, "func WithLimit(value int64) LimitOpt") != 1 {
+		t.Errorf("expected exactly one shared WithLimit function, got:\n%s", code)
+	}
+	if !strings.Contains(code, "func WithTags(value []string) TagsOpt") {
+		t.Errorf("expected WithTags function, got:\n%s", code)
+	}
+
+	// The shared option implements every per-method option interface
+	for _, apply := range []string{
+		"func (o LimitOpt) applyUserServiceList(opts *UserServiceListOptions)",
+		"func (o LimitOpt) applyUserServiceCreate(opts *UserServiceCreateOptions)",
+		"func (o LimitOpt) applyGroupServiceList(opts *GroupServiceListOptions)",
+	} {
+		if !strings.Contains(code, apply) {
+			t.Errorf("expected %q in output, got:\n%s", apply, code)
+		}
+	}
+
+	// Interface signatures: required args positional, optionals variadic
+	if !strings.Contains(code, "List(ctx context.Context, query string, opts ...UserServiceListOption) ([]string, error)") {
+		t.Errorf("expected List interface signature with variadic options, got:\n%s", code)
+	}
+	if !strings.Contains(code, "List(ctx context.Context, opts ...GroupServiceListOption) ([]string, error)") {
+		t.Errorf("expected GroupService List signature with variadic options, got:\n%s", code)
+	}
+
+	// Wire structs carry optionals as omitempty pointers / nil-able types
+	if !strings.Contains(code, "Limit *int64   `json:\"limit,omitempty\"`") &&
+		!strings.Contains(code, "Limit *int64 `json:\"limit,omitempty\"`") {
+		t.Errorf("expected omitempty pointer field for limit, got:\n%s", code)
+	}
+
+	// Server rebuilds options from present input fields
+	if !strings.Contains(code, "Opts = append(Opts, WithLimit(*Input.Limit))") {
+		t.Errorf("expected server to rebuild WithLimit option, got:\n%s", code)
+	}
+	if !strings.Contains(code, "Opts = append(Opts, WithTags(Input.Tags))") {
+		t.Errorf("expected server to rebuild WithTags option, got:\n%s", code)
+	}
+
+	// Client applies options before sending
+	if !strings.Contains(code, "Options := NewUserServiceListOptions(opts...)") {
+		t.Errorf("expected client to apply options, got:\n%s", code)
+	}
+}
+
 func TestGoGenerator_ServiceEnumReturnZeroValues(t *testing.T) {
 	source := `enum RoleType {
 	Any = -1

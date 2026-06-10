@@ -157,6 +157,50 @@ error ErrUserNotFound { Code = 404 Msg = "user not found" }
 	}
 }
 
+func TestTypeScriptGenerator_ServiceOptionalArgs(t *testing.T) {
+	source := `service UserService {
+	List (query: string, limit?: int64, tags?: []string) => (ids: []string)
+}
+
+service GroupService {
+	List (limit?: int64) => (ids: []string)
+}
+`
+
+	program := parseProgramForTypeScriptTest(t, source)
+
+	// Declaration output (.d.ts)
+	gen := NewTypeScriptGenerator(program)
+	code, err := gen.Generate()
+	if err != nil {
+		t.Fatalf("generate error: %v", err)
+	}
+
+	if !strings.Contains(code, "export interface UserServiceListOptionalArgs {\n  limit?: number;\n  tags?: string[];\n}") {
+		t.Fatalf("expected optional args interface in output, got:\n%s", code)
+	}
+	if !strings.Contains(code, "list(query: string, optionalArgs?: UserServiceListOptionalArgs, options?: OptionArgs): Promise<string[]>;") {
+		t.Fatalf("expected method signature with optionalArgs in output, got:\n%s", code)
+	}
+	if !strings.Contains(code, "list(optionalArgs?: GroupServiceListOptionalArgs, options?: OptionArgs): Promise<string[]>;") {
+		t.Fatalf("expected optional-only method signature in output, got:\n%s", code)
+	}
+
+	// Client output (.ts)
+	var sb strings.Builder
+	if err := gen.GenerateClientToWriter(&sb); err != nil {
+		t.Fatalf("client generation error: %v", err)
+	}
+
+	clientCode := sb.String()
+	if !strings.Contains(clientCode, "async list(query: string, optionalArgs?: UserServiceListOptionalArgs, options?: OptionArgs): Promise<string[]>") {
+		t.Fatalf("expected factory method signature with optionalArgs in output, got:\n%s", clientCode)
+	}
+	if !strings.Contains(clientCode, "...optionalArgs,") {
+		t.Fatalf("expected optionalArgs spread into params in output, got:\n%s", clientCode)
+	}
+}
+
 func TestTypeScriptGenerator_ModelOptionalFields(t *testing.T) {
 	source := `model Address {
 	Street: string

@@ -595,7 +595,7 @@ func (p *Parser) parseExtendModelDecl() (*IdenExpr, error) {
 	return extendModelName, nil
 }
 
-func (p *Parser) parseDeclNameTypePair() (*DeclNameTypePair, error) {
+func (p *Parser) parseDeclNameTypePair(allowOptional bool) (*DeclNameTypePair, error) {
 	var err error
 
 	nameTypePair := &DeclNameTypePair{}
@@ -608,6 +608,16 @@ func (p *Parser) parseDeclNameTypePair() (*DeclNameTypePair, error) {
 	colonTok, err := p.next()
 	if err != nil {
 		return nil, err
+	}
+	if colonTok.Type == OPTIONAL {
+		if !allowOptional {
+			return nil, NewError(colonTok, "optional marker '?' is not allowed in return values")
+		}
+		nameTypePair.Optional = true
+		colonTok, err = p.next()
+		if err != nil {
+			return nil, err
+		}
 	}
 	if colonTok.Type != COLON {
 		return nil, NewError(colonTok, "expected ':' after identifier in name-type pair declaration, got %s", colonTok.Type.String())
@@ -648,7 +658,7 @@ func (p *Parser) parseDeclServiceMethod() (*DeclServiceMethod, error) {
 			break
 		}
 
-		arg, err := p.parseDeclNameTypePair()
+		arg, err := p.parseDeclNameTypePair(true)
 		if err != nil {
 			return nil, err
 		}
@@ -717,7 +727,7 @@ func (p *Parser) parseDeclServiceMethod() (*DeclServiceMethod, error) {
 			break
 		}
 
-		ret, err := p.parseDeclNameTypePair()
+		ret, err := p.parseDeclNameTypePair(false)
 		if err != nil {
 			return nil, err
 		}

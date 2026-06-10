@@ -64,6 +64,15 @@ func (g *GoGenerator) GenerateToWriter(w io.Writer) error {
 		file.Decls = append(file.Decls, imports)
 	}
 
+	// Shared With<Name> functional options for optional method arguments.
+	// One With function is generated per unique argument name and is reused
+	// by every method that declares an optional argument with that name.
+	sharedOptionDecls, err := g.generateSharedOptionalArgDecls()
+	if err != nil {
+		return err
+	}
+	file.Decls = append(file.Decls, sharedOptionDecls...)
+
 	// Generate declarations
 	for _, node := range g.program.Nodes {
 		decls, err := g.generateNode(node)
@@ -913,6 +922,15 @@ func (g *GoGenerator) generateService(s *DeclService) ([]ast.Decl, error) {
 	}
 	decls = append(decls, interfaceDecl)
 
+	// Generate per-method option declarations for optional arguments
+	for _, m := range s.Methods {
+		optionDecls, err := g.generateMethodOptionDecls(s, m)
+		if err != nil {
+			return nil, err
+		}
+		decls = append(decls, optionDecls...)
+	}
+
 	// Generate server implementation
 	serverDecls, err := g.generateServiceServer(s)
 	if err != nil {
@@ -935,7 +953,7 @@ func (g *GoGenerator) generateServiceInterface(s *DeclService) (ast.Decl, error)
 	methods := &ast.FieldList{List: []*ast.Field{}}
 
 	for _, m := range s.Methods {
-		methodType, err := g.methodToFuncType(m)
+		methodType, err := g.methodToFuncType(s, m)
 		if err != nil {
 			return nil, err
 		}
@@ -957,7 +975,7 @@ func (g *GoGenerator) generateServiceInterface(s *DeclService) (ast.Decl, error)
 }
 
 // methodToFuncType converts a service method to Go function type
-func (g *GoGenerator) methodToFuncType(m *DeclServiceMethod) (*ast.FuncType, error) {
+func (g *GoGenerator) methodToFuncType(s *DeclService, m *DeclServiceMethod) (*ast.FuncType, error) {
 	// Parameters: always starts with context.Context
 	params := &ast.FieldList{
 		List: []*ast.Field{
@@ -971,7 +989,8 @@ func (g *GoGenerator) methodToFuncType(m *DeclServiceMethod) (*ast.FuncType, err
 		},
 	}
 
-	for _, arg := range m.Args {
+	required, optional := splitMethodArgs(m)
+	for _, arg := range required {
 		argType, err := g.declTypeToGoArgType(arg.Type)
 		if err != nil {
 			return nil, err
@@ -979,6 +998,14 @@ func (g *GoGenerator) methodToFuncType(m *DeclServiceMethod) (*ast.FuncType, err
 		params.List = append(params.List, &ast.Field{
 			Names: []*ast.Ident{ast.NewIdent(arg.Name.Name)},
 			Type:  argType,
+		})
+	}
+
+	// Optional arguments become variadic functional options
+	if len(optional) > 0 {
+		params.List = append(params.List, &ast.Field{
+			Names: []*ast.Ident{ast.NewIdent("opts")},
+			Type:  &ast.Ellipsis{Elt: ast.NewIdent(methodOptionInterfaceName(s, m))},
 		})
 	}
 
@@ -1056,15 +1083,25 @@ func (g *GoGenerator) generateServerMethod(s *DeclService, m *DeclServiceMethod,
 		},
 	})
 
+	required, optional := splitMethodArgs(m)
+
 	// Input struct
 	if len(m.Args) > 0 {
 		inputFields := &ast.FieldList{List: []*ast.Field{}}
-		for _, arg := range m.Args {
+		for _, arg := range required {
 			argType, _ := g.declTypeToGoArgType(arg.Type)
 			inputFields.List = append(inputFields.List, &ast.Field{
 				Names: []*ast.Ident{ast.NewIdent(toTitle(arg.Name.Name))},
 				Type:  argType,
 				Tag:   &ast.BasicLit{Kind: token.STRING, Value: fmt.Sprintf("`json:%q`", toCamelCase(arg.Name.Name))},
+			})
+		}
+		for _, arg := range optional {
+			argType, _ := g.optionalArgFieldType(arg.Type)
+			inputFields.List = append(inputFields.List, &ast.Field{
+				Names: []*ast.Ident{ast.NewIdent(toTitle(optionalArgKey(arg)))},
+				Type:  argType,
+				Tag:   &ast.BasicLit{Kind: token.STRING, Value: fmt.Sprintf("`json:%q`", toCamelCase(arg.Name.Name)+",omitempty")},
 			})
 		}
 
@@ -1150,13 +1187,74 @@ func (g *GoGenerator) generateServerMethod(s *DeclService, m *DeclServiceMethod,
 		})
 	}
 
+	// Rebuild functional options from optional input fields
+	if len(optional) > 0 {
+		stmts = append(stmts, &ast.DeclStmt{
+			Decl: &ast.GenDecl{
+				Tok: token.VAR,
+				Specs: []ast.Spec{
+					&ast.ValueSpec{
+						Names: []*ast.Ident{ast.NewIdent("Opts")},
+						Type:  &ast.ArrayType{Elt: ast.NewIdent(methodOptionInterfaceName(s, m))},
+					},
+				},
+			},
+		})
+
+		for _, arg := range optional {
+			fieldName := toTitle(optionalArgKey(arg))
+			fieldExpr := &ast.SelectorExpr{X: ast.NewIdent("Input"), Sel: ast.NewIdent(fieldName)}
+
+			var withArg ast.Expr = fieldExpr
+			if g.optionalArgNeedsPointer(arg.Type) {
+				withArg = &ast.StarExpr{X: fieldExpr}
+			}
+
+			stmts = append(stmts, &ast.IfStmt{
+				Cond: &ast.BinaryExpr{X: fieldExpr, Op: token.NEQ, Y: ast.NewIdent("nil")},
+				Body: &ast.BlockStmt{
+					List: []ast.Stmt{
+						&ast.AssignStmt{
+							Lhs: []ast.Expr{ast.NewIdent("Opts")},
+							Tok: token.ASSIGN,
+							Rhs: []ast.Expr{
+								&ast.CallExpr{
+									Fun: ast.NewIdent("append"),
+									Args: []ast.Expr{
+										ast.NewIdent("Opts"),
+										&ast.CallExpr{
+											Fun:  ast.NewIdent("With" + toTitle(optionalArgKey(arg))),
+											Args: []ast.Expr{withArg},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			})
+		}
+	}
+
 	// Call impl method
 	callArgs := []ast.Expr{ast.NewIdent("ctx")}
-	for _, arg := range m.Args {
+	for _, arg := range required {
 		callArgs = append(callArgs, &ast.SelectorExpr{
 			X:   ast.NewIdent("Input"),
 			Sel: ast.NewIdent(toTitle(arg.Name.Name)),
 		})
+	}
+
+	implCall := &ast.CallExpr{
+		Fun: &ast.SelectorExpr{
+			X:   &ast.SelectorExpr{X: ast.NewIdent("s"), Sel: ast.NewIdent("impl")},
+			Sel: ast.NewIdent(m.Name.Name),
+		},
+		Args: callArgs,
+	}
+	if len(optional) > 0 {
+		implCall.Args = append(implCall.Args, ast.NewIdent("Opts"))
+		implCall.Ellipsis = token.Pos(1)
 	}
 
 	lhs := []ast.Expr{}
@@ -1171,15 +1269,7 @@ func (g *GoGenerator) generateServerMethod(s *DeclService, m *DeclServiceMethod,
 	stmts = append(stmts, &ast.AssignStmt{
 		Lhs: lhs,
 		Tok: token.ASSIGN,
-		Rhs: []ast.Expr{
-			&ast.CallExpr{
-				Fun: &ast.SelectorExpr{
-					X:   &ast.SelectorExpr{X: ast.NewIdent("s"), Sel: ast.NewIdent("impl")},
-					Sel: ast.NewIdent(m.Name.Name),
-				},
-				Args: callArgs,
-			},
-		},
+		Rhs: []ast.Expr{implCall},
 	})
 
 	// Error check after impl call
@@ -1405,15 +1495,25 @@ func (g *GoGenerator) generateServiceClient(s *DeclService) ([]ast.Decl, error) 
 func (g *GoGenerator) generateClientMethod(s *DeclService, m *DeclServiceMethod, clientTypeName string) (ast.Decl, error) {
 	stmts := []ast.Stmt{}
 
+	required, optional := splitMethodArgs(m)
+
 	// Input struct
 	if len(m.Args) > 0 {
 		inputFields := &ast.FieldList{List: []*ast.Field{}}
-		for _, arg := range m.Args {
+		for _, arg := range required {
 			argType, _ := g.declTypeToGoArgType(arg.Type)
 			inputFields.List = append(inputFields.List, &ast.Field{
 				Names: []*ast.Ident{ast.NewIdent(toTitle(arg.Name.Name))},
 				Type:  argType,
 				Tag:   &ast.BasicLit{Kind: token.STRING, Value: fmt.Sprintf("`json:%q`", toCamelCase(arg.Name.Name))},
+			})
+		}
+		for _, arg := range optional {
+			argType, _ := g.optionalArgFieldType(arg.Type)
+			inputFields.List = append(inputFields.List, &ast.Field{
+				Names: []*ast.Ident{ast.NewIdent(toTitle(optionalArgKey(arg)))},
+				Type:  argType,
+				Tag:   &ast.BasicLit{Kind: token.STRING, Value: fmt.Sprintf("`json:%q`", toCamelCase(arg.Name.Name)+",omitempty")},
 			})
 		}
 
@@ -1430,12 +1530,36 @@ func (g *GoGenerator) generateClientMethod(s *DeclService, m *DeclServiceMethod,
 		})
 
 		// Assign input values
-		for _, arg := range m.Args {
+		for _, arg := range required {
 			stmts = append(stmts, &ast.AssignStmt{
 				Lhs: []ast.Expr{&ast.SelectorExpr{X: ast.NewIdent("In"), Sel: ast.NewIdent(toTitle(arg.Name.Name))}},
 				Tok: token.ASSIGN,
 				Rhs: []ast.Expr{ast.NewIdent(arg.Name.Name)},
 			})
+		}
+
+		// Apply functional options and copy them onto the wire struct
+		if len(optional) > 0 {
+			stmts = append(stmts, &ast.AssignStmt{
+				Lhs: []ast.Expr{ast.NewIdent("Options")},
+				Tok: token.DEFINE,
+				Rhs: []ast.Expr{
+					&ast.CallExpr{
+						Fun:      ast.NewIdent("New" + methodOptionsStructName(s, m)),
+						Args:     []ast.Expr{ast.NewIdent("opts")},
+						Ellipsis: token.Pos(1),
+					},
+				},
+			})
+
+			for _, arg := range optional {
+				fieldName := toTitle(optionalArgKey(arg))
+				stmts = append(stmts, &ast.AssignStmt{
+					Lhs: []ast.Expr{&ast.SelectorExpr{X: ast.NewIdent("In"), Sel: ast.NewIdent(fieldName)}},
+					Tok: token.ASSIGN,
+					Rhs: []ast.Expr{&ast.SelectorExpr{X: ast.NewIdent("Options"), Sel: ast.NewIdent(fieldName)}},
+				})
+			}
 		}
 	}
 
@@ -1611,11 +1735,17 @@ func (g *GoGenerator) generateClientMethod(s *DeclService, m *DeclServiceMethod,
 			},
 		},
 	}
-	for _, arg := range m.Args {
+	for _, arg := range required {
 		argType, _ := g.declTypeToGoArgType(arg.Type)
 		params.List = append(params.List, &ast.Field{
 			Names: []*ast.Ident{ast.NewIdent(arg.Name.Name)},
 			Type:  argType,
+		})
+	}
+	if len(optional) > 0 {
+		params.List = append(params.List, &ast.Field{
+			Names: []*ast.Ident{ast.NewIdent("opts")},
+			Type:  &ast.Ellipsis{Elt: ast.NewIdent(methodOptionInterfaceName(s, m))},
 		})
 	}
 
@@ -1861,6 +1991,350 @@ func toTitle(s string) string {
 	runes := []rune(s)
 	runes[0] = unicode.ToUpper(runes[0])
 	return string(runes)
+}
+
+//
+// Optional method arguments (functional options)
+//
+
+// splitMethodArgs separates required and optional arguments of a method
+func splitMethodArgs(m *DeclServiceMethod) (required, optional []*DeclNameTypePair) {
+	for _, arg := range m.Args {
+		if arg.Optional {
+			optional = append(optional, arg)
+		} else {
+			required = append(required, arg)
+		}
+	}
+	return required, optional
+}
+
+// optionalArgKey is the canonical grouping key for shared With<Name> options.
+// It matches the camelCase JSON wire key.
+func optionalArgKey(arg *DeclNameTypePair) string {
+	return toCamelCase(arg.Name.Name)
+}
+
+// methodOptionInterfaceName returns e.g. "UserServiceListOption"
+func methodOptionInterfaceName(s *DeclService, m *DeclServiceMethod) string {
+	return s.Name.Name + m.Name.Name + "Option"
+}
+
+// methodOptionsStructName returns e.g. "UserServiceListOptions"
+func methodOptionsStructName(s *DeclService, m *DeclServiceMethod) string {
+	return s.Name.Name + m.Name.Name + "Options"
+}
+
+// methodOptionApplyName returns e.g. "applyUserServiceList"
+func methodOptionApplyName(s *DeclService, m *DeclServiceMethod) string {
+	return "apply" + s.Name.Name + m.Name.Name
+}
+
+// optionalArgNeedsPointer reports whether the optional argument's Go type
+// must be wrapped in a pointer to distinguish "not set" from the zero value.
+// Arrays, maps, any, and models (already *Model) are nil-able as-is.
+func (g *GoGenerator) optionalArgNeedsPointer(t DeclType) bool {
+	switch dt := t.(type) {
+	case *DeclArrayType, *DeclMapType, *DeclAnyType:
+		return false
+	case *DeclCustomType:
+		_, isEnum := g.enums[dt.Name.Name]
+		return isEnum
+	default:
+		return true
+	}
+}
+
+// optionalArgFieldType returns the Go type used for an optional argument in
+// options structs and wire (In/Input) structs.
+func (g *GoGenerator) optionalArgFieldType(t DeclType) (ast.Expr, error) {
+	argType, err := g.declTypeToGoArgType(t)
+	if err != nil {
+		return nil, err
+	}
+	if g.optionalArgNeedsPointer(t) {
+		return &ast.StarExpr{X: argType}, nil
+	}
+	return argType, nil
+}
+
+// optionalArgUsage tracks every method that declares an optional argument
+// with the same name (and therefore the same type, enforced by validation)
+type optionalArgUsage struct {
+	arg      *DeclNameTypePair
+	services []*DeclService
+	methods  []*DeclServiceMethod
+}
+
+// collectOptionalArgUsages gathers optional arguments across all services,
+// grouped by their shared key, in deterministic declaration order
+func (g *GoGenerator) collectOptionalArgUsages() ([]string, map[string]*optionalArgUsage) {
+	var order []string
+	usages := make(map[string]*optionalArgUsage)
+
+	for _, node := range g.program.Nodes {
+		s, ok := node.(*DeclService)
+		if !ok {
+			continue
+		}
+		for _, m := range s.Methods {
+			for _, arg := range m.Args {
+				if !arg.Optional {
+					continue
+				}
+				key := optionalArgKey(arg)
+				usage, ok := usages[key]
+				if !ok {
+					usage = &optionalArgUsage{arg: arg}
+					usages[key] = usage
+					order = append(order, key)
+				}
+				usage.services = append(usage.services, s)
+				usage.methods = append(usage.methods, m)
+			}
+		}
+	}
+
+	return order, usages
+}
+
+// generateSharedOptionalArgDecls generates, for each unique optional argument
+// name, a concrete option type (e.g. LimitOpt), its With<Name> constructor,
+// and one apply method per service method that uses it. Because the concrete
+// type implements every relevant per-method option interface, a single
+// WithLimit(...) value can be passed, type-safely, to any method that
+// declares an optional 'limit' argument.
+func (g *GoGenerator) generateSharedOptionalArgDecls() ([]ast.Decl, error) {
+	order, usages := g.collectOptionalArgUsages()
+
+	decls := []ast.Decl{}
+	for _, key := range order {
+		usage := usages[key]
+		optTypeName := toTitle(key) + "Opt"
+		fieldName := toTitle(key)
+
+		valueType, err := g.declTypeToGoArgType(usage.arg.Type)
+		if err != nil {
+			return nil, err
+		}
+
+		// type LimitOpt struct { value int64 }
+		decls = append(decls, &ast.GenDecl{
+			Tok: token.TYPE,
+			Specs: []ast.Spec{
+				&ast.TypeSpec{
+					Name: ast.NewIdent(optTypeName),
+					Type: &ast.StructType{
+						Fields: &ast.FieldList{
+							List: []*ast.Field{
+								{
+									Names: []*ast.Ident{ast.NewIdent("value")},
+									Type:  valueType,
+								},
+							},
+						},
+					},
+				},
+			},
+		})
+
+		// func WithLimit(value int64) LimitOpt { return LimitOpt{value: value} }
+		decls = append(decls, &ast.FuncDecl{
+			Name: ast.NewIdent("With" + toTitle(key)),
+			Type: &ast.FuncType{
+				Params: &ast.FieldList{
+					List: []*ast.Field{
+						{
+							Names: []*ast.Ident{ast.NewIdent("value")},
+							Type:  valueType,
+						},
+					},
+				},
+				Results: &ast.FieldList{
+					List: []*ast.Field{{Type: ast.NewIdent(optTypeName)}},
+				},
+			},
+			Body: &ast.BlockStmt{
+				List: []ast.Stmt{
+					&ast.ReturnStmt{
+						Results: []ast.Expr{
+							&ast.CompositeLit{
+								Type: ast.NewIdent(optTypeName),
+								Elts: []ast.Expr{
+									&ast.KeyValueExpr{
+										Key:   ast.NewIdent("value"),
+										Value: ast.NewIdent("value"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		})
+
+		// func (o LimitOpt) applyUserServiceList(opts *UserServiceListOptions) { opts.Limit = &o.value }
+		for i := range usage.methods {
+			s := usage.services[i]
+			m := usage.methods[i]
+
+			var assignValue ast.Expr = &ast.SelectorExpr{X: ast.NewIdent("o"), Sel: ast.NewIdent("value")}
+			if g.optionalArgNeedsPointer(usage.arg.Type) {
+				assignValue = &ast.UnaryExpr{Op: token.AND, X: assignValue}
+			}
+
+			decls = append(decls, &ast.FuncDecl{
+				Recv: &ast.FieldList{
+					List: []*ast.Field{
+						{
+							Names: []*ast.Ident{ast.NewIdent("o")},
+							Type:  ast.NewIdent(optTypeName),
+						},
+					},
+				},
+				Name: ast.NewIdent(methodOptionApplyName(s, m)),
+				Type: &ast.FuncType{
+					Params: &ast.FieldList{
+						List: []*ast.Field{
+							{
+								Names: []*ast.Ident{ast.NewIdent("opts")},
+								Type:  &ast.StarExpr{X: ast.NewIdent(methodOptionsStructName(s, m))},
+							},
+						},
+					},
+				},
+				Body: &ast.BlockStmt{
+					List: []ast.Stmt{
+						&ast.AssignStmt{
+							Lhs: []ast.Expr{&ast.SelectorExpr{X: ast.NewIdent("opts"), Sel: ast.NewIdent(fieldName)}},
+							Tok: token.ASSIGN,
+							Rhs: []ast.Expr{assignValue},
+						},
+					},
+				},
+			})
+		}
+	}
+
+	return decls, nil
+}
+
+// generateMethodOptionDecls generates the per-method option interface,
+// options struct, and constructor for a method with optional arguments:
+//
+//	type UserServiceListOption interface { applyUserServiceList(*UserServiceListOptions) }
+//	type UserServiceListOptions struct { Limit *int64 }
+//	func NewUserServiceListOptions(opts ...UserServiceListOption) *UserServiceListOptions
+func (g *GoGenerator) generateMethodOptionDecls(s *DeclService, m *DeclServiceMethod) ([]ast.Decl, error) {
+	_, optional := splitMethodArgs(m)
+	if len(optional) == 0 {
+		return nil, nil
+	}
+
+	ifaceName := methodOptionInterfaceName(s, m)
+	structName := methodOptionsStructName(s, m)
+	applyName := methodOptionApplyName(s, m)
+
+	decls := []ast.Decl{}
+
+	// Option interface
+	decls = append(decls, &ast.GenDecl{
+		Tok: token.TYPE,
+		Specs: []ast.Spec{
+			&ast.TypeSpec{
+				Name: ast.NewIdent(ifaceName),
+				Type: &ast.InterfaceType{
+					Methods: &ast.FieldList{
+						List: []*ast.Field{
+							{
+								Names: []*ast.Ident{ast.NewIdent(applyName)},
+								Type: &ast.FuncType{
+									Params: &ast.FieldList{
+										List: []*ast.Field{
+											{Type: &ast.StarExpr{X: ast.NewIdent(structName)}},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	})
+
+	// Options struct
+	structFields := &ast.FieldList{List: []*ast.Field{}}
+	for _, arg := range optional {
+		fieldType, err := g.optionalArgFieldType(arg.Type)
+		if err != nil {
+			return nil, err
+		}
+		structFields.List = append(structFields.List, &ast.Field{
+			Names: []*ast.Ident{ast.NewIdent(toTitle(optionalArgKey(arg)))},
+			Type:  fieldType,
+		})
+	}
+	decls = append(decls, &ast.GenDecl{
+		Tok: token.TYPE,
+		Specs: []ast.Spec{
+			&ast.TypeSpec{
+				Name: ast.NewIdent(structName),
+				Type: &ast.StructType{Fields: structFields},
+			},
+		},
+	})
+
+	// Constructor
+	decls = append(decls, &ast.FuncDecl{
+		Name: ast.NewIdent("New" + structName),
+		Type: &ast.FuncType{
+			Params: &ast.FieldList{
+				List: []*ast.Field{
+					{
+						Names: []*ast.Ident{ast.NewIdent("opts")},
+						Type:  &ast.Ellipsis{Elt: ast.NewIdent(ifaceName)},
+					},
+				},
+			},
+			Results: &ast.FieldList{
+				List: []*ast.Field{{Type: &ast.StarExpr{X: ast.NewIdent(structName)}}},
+			},
+		},
+		Body: &ast.BlockStmt{
+			List: []ast.Stmt{
+				&ast.AssignStmt{
+					Lhs: []ast.Expr{ast.NewIdent("options")},
+					Tok: token.DEFINE,
+					Rhs: []ast.Expr{
+						&ast.UnaryExpr{
+							Op: token.AND,
+							X:  &ast.CompositeLit{Type: ast.NewIdent(structName)},
+						},
+					},
+				},
+				&ast.RangeStmt{
+					Key:   ast.NewIdent("_"),
+					Value: ast.NewIdent("opt"),
+					Tok:   token.DEFINE,
+					X:     ast.NewIdent("opts"),
+					Body: &ast.BlockStmt{
+						List: []ast.Stmt{
+							&ast.ExprStmt{
+								X: &ast.CallExpr{
+									Fun:  &ast.SelectorExpr{X: ast.NewIdent("opt"), Sel: ast.NewIdent(applyName)},
+									Args: []ast.Expr{ast.NewIdent("options")},
+								},
+							},
+						},
+					},
+				},
+				&ast.ReturnStmt{Results: []ast.Expr{ast.NewIdent("options")}},
+			},
+		},
+	})
+
+	return decls, nil
 }
 
 // GenerateHelperTypes generates common helper types like HandleRegistry and Error

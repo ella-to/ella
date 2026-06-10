@@ -156,6 +156,42 @@ model Person {
 	runParserTest(t, input, output)
 }
 
+func TestServiceParser_OptionalArguments(t *testing.T) {
+	input := `
+service UserService {
+	List (query: string, limit?: int64, tags?: []string) => (ids: []string)
+}
+`
+
+	output := `
+service UserService {
+	List (query: string, limit?: int64, tags?: []string) => (ids: []string)
+}
+`
+
+	runParserTest(t, input, output)
+}
+
+func TestServiceParser_OptionalReturnRejected(t *testing.T) {
+	input := `
+service UserService {
+	List (query: string) => (ids?: []string)
+}
+`
+
+	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(input), "test.ella"))
+	_, err := parser.Parse()
+
+	if err == nil {
+		t.Error("expected error for optional marker in return values, got none")
+		return
+	}
+
+	if !strings.Contains(err.Error(), "not allowed in return values") {
+		t.Errorf("expected error about optional return values, got: %v", err)
+	}
+}
+
 func TestCommentParser(t *testing.T) {
 	input := `
 # This is a comment

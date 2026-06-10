@@ -182,7 +182,15 @@ func (g *WasmGenerator) generateMethodWasmWrapper(sb *strings.Builder, svc *Decl
 	svcName := svc.Name.Name
 	methodName := method.Name.Name
 	funcName := fmt.Sprintf("js%s%s", svcName, methodName)
-	numArgs := len(method.Args)
+
+	required, optional := splitMethodArgs(method)
+
+	// JS argument layout: required args, then the optional-args object (if
+	// the method declares optional arguments), then the call options object
+	callOptionsIdx := len(required)
+	if len(optional) > 0 {
+		callOptionsIdx++
+	}
 
 	sb.WriteString(fmt.Sprintf("func %s(serviceImpl %s, args []js.Value) any {\n", funcName, svcName))
 
@@ -192,7 +200,7 @@ func (g *WasmGenerator) generateMethodWasmWrapper(sb *strings.Builder, svc *Decl
 	sb.WriteString("\t}\n\n")
 
 	// Parse options (last argument)
-	sb.WriteString(fmt.Sprintf("\topts := createJsCallOptions(args, %d)\n\n", numArgs))
+	sb.WriteString(fmt.Sprintf("\topts := createJsCallOptions(args, %d)\n\n", callOptionsIdx))
 
 	// Check cache first
 	sb.WriteString("\tif cached, found := opts.GetCache(); found {\n")
@@ -207,9 +215,14 @@ func (g *WasmGenerator) generateMethodWasmWrapper(sb *strings.Builder, svc *Decl
 	// Return a promise
 	sb.WriteString("\treturn jsPromise(func(resolve, reject js.Value) {\n")
 
-	// Parse arguments
-	for i, arg := range method.Args {
+	// Parse required arguments
+	for i, arg := range required {
 		g.generateArgParser(sb, arg, i)
+	}
+
+	// Parse the optional-args object into functional options
+	if len(optional) > 0 {
+		g.generateOptionalArgsParser(sb, svc, method, optional, len(required))
 	}
 
 	// Create context with options (supports abort signal)
@@ -231,9 +244,12 @@ func (g *WasmGenerator) generateMethodWasmWrapper(sb *strings.Builder, svc *Decl
 	sb.WriteString(fmt.Sprintf("serviceImpl.%s(ctx", methodName))
 
 	// Add arguments
-	for _, arg := range method.Args {
+	for _, arg := range required {
 		sb.WriteString(", ")
 		sb.WriteString(toLowerFirst(arg.Name.Name))
+	}
+	if len(optional) > 0 {
+		sb.WriteString(", _opts...")
 	}
 	sb.WriteString(")\n")
 
@@ -314,6 +330,65 @@ func (g *WasmGenerator) generateArgParser(sb *strings.Builder, arg *DeclNameType
 	default:
 		sb.WriteString(fmt.Sprintf("\t\t%s := jsGetArg(args, %d) // unsupported type\n", argName, index))
 	}
+}
+
+// generateOptionalArgsParser reads the optional-args object (sitting after
+// the required arguments) and converts every present key into the shared
+// With<Name> functional option, collected in _opts.
+func (g *WasmGenerator) generateOptionalArgsParser(sb *strings.Builder, svc *DeclService, method *DeclServiceMethod, optional []*DeclNameTypePair, optionalIdx int) {
+	sb.WriteString(fmt.Sprintf("\t\tvar _opts []%s\n", methodOptionInterfaceName(svc, method)))
+	sb.WriteString(fmt.Sprintf("\t\t_optionalJS := jsGetArg(args, %d)\n", optionalIdx))
+	sb.WriteString("\t\tif _optionalJS.Type() == js.TypeObject {\n")
+
+	for _, arg := range optional {
+		key := optionalArgKey(arg)
+		jsVar := fmt.Sprintf("_%sJS", key)
+		withFunc := "With" + toTitle(key)
+
+		sb.WriteString(fmt.Sprintf("\t\t\t%s := _optionalJS.Get(%q)\n", jsVar, key))
+		sb.WriteString(fmt.Sprintf("\t\t\tif %s.Type() != js.TypeUndefined && %s.Type() != js.TypeNull {\n", jsVar, jsVar))
+
+		switch t := arg.Type.(type) {
+		case *DeclStringType:
+			sb.WriteString(fmt.Sprintf("\t\t\t\t_opts = append(_opts, %s(%s.String()))\n", withFunc, jsVar))
+		case *DeclNumberType:
+			goType := g.getGoNumberType(t.Name.Name)
+			if goType == "float32" || goType == "float64" {
+				sb.WriteString(fmt.Sprintf("\t\t\t\t_opts = append(_opts, %s(%s(%s.Float())))\n", withFunc, goType, jsVar))
+			} else {
+				sb.WriteString(fmt.Sprintf("\t\t\t\t_opts = append(_opts, %s(%s(%s.Int())))\n", withFunc, goType, jsVar))
+			}
+		case *DeclBoolType:
+			sb.WriteString(fmt.Sprintf("\t\t\t\t_opts = append(_opts, %s(%s.Bool()))\n", withFunc, jsVar))
+		case *DeclTimestampType:
+			sb.WriteString(fmt.Sprintf("\t\t\t\t_opts = append(_opts, %s(time.UnixMilli(int64(%s.Float()))))\n", withFunc, jsVar))
+		case *DeclCustomType:
+			if _, isEnum := g.enums[t.Name.Name]; isEnum {
+				goVar := "_" + key
+				sb.WriteString(fmt.Sprintf("\t\t\t\tvar %s %s\n", goVar, t.Name.Name))
+				sb.WriteString(fmt.Sprintf("\t\t\t\tjson.Unmarshal([]byte(\"\\\"\"+%s.String()+\"\\\"\"), &%s)\n", jsVar, goVar))
+				sb.WriteString(fmt.Sprintf("\t\t\t\t_opts = append(_opts, %s(%s))\n", withFunc, goVar))
+			} else {
+				g.writeOptionalJSONArgParser(sb, key, jsVar, withFunc, g.declTypeToGoTypeString(arg.Type))
+			}
+		default:
+			g.writeOptionalJSONArgParser(sb, key, jsVar, withFunc, g.declTypeToGoTypeString(arg.Type))
+		}
+
+		sb.WriteString("\t\t\t}\n")
+	}
+
+	sb.WriteString("\t\t}\n")
+}
+
+// writeOptionalJSONArgParser converts a JS value to Go via a JSON round-trip
+// (used for arrays, maps, models, and any)
+func (g *WasmGenerator) writeOptionalJSONArgParser(sb *strings.Builder, key, jsVar, withFunc, goType string) {
+	goVar := "_" + key
+	sb.WriteString(fmt.Sprintf("\t\t\t\tvar %s %s\n", goVar, goType))
+	sb.WriteString(fmt.Sprintf("\t\t\t\t%sJSON := js.Global().Get(\"JSON\").Call(\"stringify\", %s).String()\n", goVar, jsVar))
+	sb.WriteString(fmt.Sprintf("\t\t\t\tjson.Unmarshal([]byte(%sJSON), &%s)\n", goVar, goVar))
+	sb.WriteString(fmt.Sprintf("\t\t\t\t_opts = append(_opts, %s(%s))\n", withFunc, goVar))
 }
 
 func (g *WasmGenerator) declTypeToGoTypeString(t DeclType) string {

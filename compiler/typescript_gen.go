@@ -527,18 +527,7 @@ func (g *TypeScriptGenerator) generateServiceFactoryMethod(sb *strings.Builder, 
 	methodName := tsToCamelCase(method.Name.Name)
 	sb.WriteString(fmt.Sprintf("    async %s(", methodName))
 
-	for i, arg := range method.Args {
-		if i > 0 {
-			sb.WriteString(", ")
-		}
-		argName := tsToCamelCase(arg.Name.Name)
-		argType := g.declTypeToTSType(arg.Type)
-		sb.WriteString(fmt.Sprintf("%s: %s", argName, argType))
-	}
-	if len(method.Args) > 0 {
-		sb.WriteString(", ")
-	}
-	sb.WriteString("options?: OptionArgs")
+	g.writeMethodParams(sb, svc, method)
 
 	sb.WriteString("): Promise<")
 	if len(method.Returns) == 0 {
@@ -558,10 +547,16 @@ func (g *TypeScriptGenerator) generateServiceFactoryMethod(sb *strings.Builder, 
 	sb.WriteString("> {\n")
 
 	if len(method.Args) > 0 {
+		required, optional := splitMethodArgs(method)
 		sb.WriteString("      const params = {\n")
-		for _, arg := range method.Args {
+		for _, arg := range required {
 			argName := tsToCamelCase(arg.Name.Name)
 			sb.WriteString(fmt.Sprintf("        %s,\n", argName))
+		}
+		if len(optional) > 0 {
+			// JSON.stringify drops undefined values, so unset optional
+			// arguments are omitted from the wire payload
+			sb.WriteString("        ...optionalArgs,\n")
 		}
 		sb.WriteString("      };\n")
 	}
@@ -794,25 +789,14 @@ func (g *TypeScriptGenerator) generateErrorTypes(sb *strings.Builder) {
 	sb.WriteString("\n")
 }
 
-func (g *TypeScriptGenerator) generateServiceInterface(sb *strings.Builder, svc *DeclService) {
-	svcName := svc.Name.Name
+// writeMethodParams writes a method's parameter list: required args first,
+// then an optional object for optional args, then the call options:
+//
+//	(query: string, optionalArgs?: UserServiceListOptionalArgs, options?: OptionArgs)
+func (g *TypeScriptGenerator) writeMethodParams(sb *strings.Builder, svc *DeclService, method *DeclServiceMethod) {
+	required, optional := splitMethodArgs(method)
 
-	sb.WriteString(fmt.Sprintf("export interface %s {\n", svcName))
-
-	for _, method := range svc.Methods {
-		g.generateMethodSignature(sb, method)
-	}
-
-	sb.WriteString("}\n\n")
-}
-
-func (g *TypeScriptGenerator) generateMethodSignature(sb *strings.Builder, method *DeclServiceMethod) {
-	methodName := tsToCamelCase(method.Name.Name)
-
-	sb.WriteString(fmt.Sprintf("  %s(", methodName))
-
-	// Parameters
-	for i, arg := range method.Args {
+	for i, arg := range required {
 		if i > 0 {
 			sb.WriteString(", ")
 		}
@@ -821,11 +805,61 @@ func (g *TypeScriptGenerator) generateMethodSignature(sb *strings.Builder, metho
 		sb.WriteString(fmt.Sprintf("%s: %s", argName, argType))
 	}
 
-	// Add optional options parameter
-	if len(method.Args) > 0 {
+	if len(required) > 0 {
 		sb.WriteString(", ")
 	}
+	if len(optional) > 0 {
+		sb.WriteString(fmt.Sprintf("optionalArgs?: %s, ", tsOptionalArgsTypeName(svc, method)))
+	}
 	sb.WriteString("options?: OptionArgs")
+}
+
+// tsOptionalArgsTypeName returns e.g. "UserServiceListOptionalArgs"
+func tsOptionalArgsTypeName(svc *DeclService, method *DeclServiceMethod) string {
+	return svc.Name.Name + method.Name.Name + "OptionalArgs"
+}
+
+// generateOptionalArgsTypes emits one named interface per method that has
+// optional arguments, e.g.:
+//
+//	export interface UserServiceListOptionalArgs { limit?: number; }
+func (g *TypeScriptGenerator) generateOptionalArgsTypes(sb *strings.Builder, svc *DeclService) {
+	for _, method := range svc.Methods {
+		_, optional := splitMethodArgs(method)
+		if len(optional) == 0 {
+			continue
+		}
+
+		sb.WriteString(fmt.Sprintf("export interface %s {\n", tsOptionalArgsTypeName(svc, method)))
+		for _, arg := range optional {
+			argName := tsToCamelCase(arg.Name.Name)
+			argType := g.declTypeToTSType(arg.Type)
+			sb.WriteString(fmt.Sprintf("  %s?: %s;\n", argName, argType))
+		}
+		sb.WriteString("}\n\n")
+	}
+}
+
+func (g *TypeScriptGenerator) generateServiceInterface(sb *strings.Builder, svc *DeclService) {
+	svcName := svc.Name.Name
+
+	g.generateOptionalArgsTypes(sb, svc)
+
+	sb.WriteString(fmt.Sprintf("export interface %s {\n", svcName))
+
+	for _, method := range svc.Methods {
+		g.generateMethodSignature(sb, svc, method)
+	}
+
+	sb.WriteString("}\n\n")
+}
+
+func (g *TypeScriptGenerator) generateMethodSignature(sb *strings.Builder, svc *DeclService, method *DeclServiceMethod) {
+	methodName := tsToCamelCase(method.Name.Name)
+
+	sb.WriteString(fmt.Sprintf("  %s(", methodName))
+
+	g.writeMethodParams(sb, svc, method)
 
 	sb.WriteString("): Promise<")
 

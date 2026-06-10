@@ -37,6 +37,10 @@ func (v *Validator) Validate() []error {
 		v.validateNode(node)
 	}
 
+	// Third pass: optional arguments sharing a name must share a type across
+	// the whole program, so a single With<Name> option can serve all of them
+	v.validateOptionalArgConsistency()
+
 	return v.errors
 }
 
@@ -288,11 +292,17 @@ func (v *Validator) validateService(s *DeclService) {
 
 		// Validate method args
 		argNames := make(map[string]*DeclNameTypePair)
+		seenOptional := false
 		for _, arg := range method.Args {
 			if existing, ok := argNames[arg.Name.Name]; ok {
 				v.addError(arg.Name.Token, "duplicate argument '%s' in method '%s.%s', previously declared at line %d", arg.Name.Name, s.Name.Name, method.Name.Name, existing.Name.Token.Pos.Line)
 			} else {
 				argNames[arg.Name.Name] = arg
+			}
+			if arg.Optional {
+				seenOptional = true
+			} else if seenOptional {
+				v.addError(arg.Name.Token, "required argument '%s' in method '%s.%s' must be declared before optional arguments", arg.Name.Name, s.Name.Name, method.Name.Name)
 			}
 			v.validateType(arg.Type, fmt.Sprintf("argument '%s' in method '%s.%s'", arg.Name.Name, s.Name.Name, method.Name.Name))
 		}
@@ -310,6 +320,47 @@ func (v *Validator) validateService(s *DeclService) {
 
 		// Validate method options
 		v.validateOptions(method.Options, fmt.Sprintf("method '%s.%s'", s.Name.Name, method.Name.Name))
+	}
+}
+
+// validateOptionalArgConsistency ensures that optional arguments sharing a
+// name (case-insensitive on the first letter, matching the generated
+// With<Name> function and the camelCase wire key) use the same type in every
+// method across all services.
+func (v *Validator) validateOptionalArgConsistency() {
+	type optionalArgUse struct {
+		arg     *DeclNameTypePair
+		service string
+		method  string
+	}
+
+	seen := make(map[string]optionalArgUse)
+
+	for _, node := range v.program.Nodes {
+		s, ok := node.(*DeclService)
+		if !ok {
+			continue
+		}
+		for _, method := range s.Methods {
+			for _, arg := range method.Args {
+				if !arg.Optional {
+					continue
+				}
+				key := toCamelCase(arg.Name.Name)
+				existing, ok := seen[key]
+				if !ok {
+					seen[key] = optionalArgUse{arg: arg, service: s.Name.Name, method: method.Name.Name}
+					continue
+				}
+				if existing.arg.Type.String() != arg.Type.String() {
+					v.addError(arg.Name.Token,
+						"optional argument '%s' in method '%s.%s' has type '%s', but it was declared with type '%s' in method '%s.%s' at line %d; optional arguments sharing a name must share the same type so a single With%s option can be generated",
+						arg.Name.Name, s.Name.Name, method.Name.Name, arg.Type.String(),
+						existing.arg.Type.String(), existing.service, existing.method, existing.arg.Name.Token.Pos.Line,
+						toTitle(arg.Name.Name))
+				}
+			}
+		}
 	}
 }
 

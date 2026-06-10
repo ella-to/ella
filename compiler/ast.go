@@ -328,11 +328,15 @@ func (dm *DeclModel) String() string {
 }
 
 type DeclNameTypePair struct {
-	Name *IdenExpr
-	Type DeclType
+	Name     *IdenExpr
+	Type     DeclType
+	Optional bool
 }
 
 func (dntp *DeclNameTypePair) String() string {
+	if dntp.Optional {
+		return dntp.Name.String() + "?: " + dntp.Type.String()
+	}
 	return dntp.Name.String() + ": " + dntp.Type.String()
 }
 
