@@ -121,6 +121,10 @@
           "match": ":"
         },
         {
+          "name": "keyword.operator.optional.ella",
+          "match": "\\?"
+        },
+        {
           "name": "keyword.operator.spread.ella",
           "match": "\\.\\.\\."
         },
@@ -262,12 +266,15 @@
             },
             {
               "name": "meta.model.field.ella",
-              "begin": "^(\\s*)([A-Za-z_][A-Za-z0-9_]*)(\\s*:)",
+              "begin": "^(\\s*)([A-Za-z_][A-Za-z0-9_]*)(\\?)?(?:\\s*(:))",
               "beginCaptures": {
                 "2": {
                   "name": "variable.other.member.ella"
                 },
                 "3": {
+                  "name": "keyword.operator.optional.ella"
+                },
+                "4": {
                   "name": "keyword.operator.type.ella"
                 }
               },
@@ -340,8 +347,15 @@
               "end": "$",
               "patterns": [
                 {
-                  "name": "variable.parameter.ella",
-                  "match": "\\b[a-z][A-Za-z0-9_]*\\b(?=\\s*:)"
+                  "match": "\\b([a-z][A-Za-z0-9_]*)(\\?)?(?=\\s*:)",
+                  "captures": {
+                    "1": {
+                      "name": "variable.parameter.ella"
+                    },
+                    "2": {
+                      "name": "keyword.operator.optional.ella"
+                    }
+                  }
                 },
                 {
                   "name": "entity.name.function.service.ella",
