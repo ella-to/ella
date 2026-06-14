@@ -9,6 +9,7 @@ import (
 	"sync"
 
 	"ella.to/ella/compiler"
+	"ella.to/ella/lsp"
 )
 
 const Version = "0.3.0"
@@ -31,11 +32,17 @@ Commands:
         Supports: .go, _js.go (WASM bindings), .d.ts, or .ts (TypeScript)
         ella gen [--debug] <pkg> <output path to file> <search glob paths...>
 
+  - lsp Start the language server (speaks LSP over stdio).
+        Point your editor at this command to get diagnostics, go-to-definition,
+        hover, document symbols, completion, find-references, and formatting.
+        ella lsp [--log <file>]
+
   - ver Print the version of ella
 
 Flags:
   --debug  Print the AST (Abstract Syntax Tree) for debugging
   --allow-ext  Enable extension registration for *_js.go generation
+  --log  (lsp) Write server logs to a file instead of stderr
 
 Output file conventions:
   *.go       Generate Go code (models, services, clients)
@@ -49,6 +56,7 @@ Examples:
   ella gen schema --allow-ext ./path/to/schema_gen_js.go "./path/to/*.ella"
   ella gen schema ./path/to/schema_gen_js.go "./path/to/*.ella"
   ella gen schema ./path/to/schema.d.ts "./path/to/*.ella"
+  ella lsp
 `
 
 func main() {
@@ -140,12 +148,46 @@ func main() {
 
 		genCmd(files, pkg, out, debug, allowExt)
 
+	case "lsp":
+		lspCmd(os.Args[2:])
+
 	case "ver":
 		fmt.Println(Version)
 
 	default:
 		fmt.Print(usage)
 		os.Exit(0)
+	}
+}
+
+func lspCmd(args []string) {
+	logOut := os.Stderr // stderr never carries the protocol, so it is safe for logs
+
+	for i := 0; i < len(args); i++ {
+		switch args[i] {
+		case "--stdio":
+			// stdio is the only transport; accepted for editor-client compatibility
+		case "--log":
+			if i+1 >= len(args) {
+				showErrors(fmt.Errorf("--log requires a file path"))
+				return
+			}
+			i++
+			f, ferr := os.OpenFile(args[i], os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+			if ferr != nil {
+				showErrors(ferr)
+				return
+			}
+			defer f.Close()
+			logOut = f
+		default:
+			showErrors(fmt.Errorf("unknown lsp flag: %s", args[i]))
+			return
+		}
+	}
+
+	if runErr := lsp.Run(os.Stdin, os.Stdout, logOut, Version); runErr != nil {
+		showErrors(runErr)
 	}
 }
 

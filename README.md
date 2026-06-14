@@ -49,6 +49,9 @@ ella gen schema "./web/src/schema.ts" "./schema/src/*.ella"
 # Print AST for debugging
 ella gen schema --debug "./schema/output.gen.go" "./schema/src/*.ella"
 
+# Start the language server (for editor integration, speaks LSP over stdio)
+ella lsp
+
 # Print version
 ella ver
 ```
@@ -282,18 +285,96 @@ The WASM output (with `--allow-ext`) generates Go code that:
 ella fmt "./schema/src/*.ella"
 ```
 
-## Syntax Highlighting
+## Editor Support
 
-Ella includes a VS Code syntax extension in `tools/syntax`.
+### Language Server
 
-Install from this repository:
+Ella ships a built-in language server. Start it with:
+
+```bash
+ella lsp
+```
+
+It speaks the [Language Server Protocol](https://microsoft.github.io/language-server-protocol/)
+over **stdio** and provides:
+
+| Feature                  | LSP method                      |
+| ------------------------ | ------------------------------- |
+| Diagnostics (errors)     | `textDocument/publishDiagnostics` |
+| Go-to-definition         | `textDocument/definition`       |
+| Hover                    | `textDocument/hover`            |
+| Document outline/symbols | `textDocument/documentSymbol`   |
+| Completion               | `textDocument/completion`       |
+| Find references          | `textDocument/references`       |
+| Formatting               | `textDocument/formatting`       |
+
+Diagnostics combine scanner/parser errors with full schema validation, and the
+server is **workspace-aware**: it indexes every `.ella` file under the workspace
+root, so go-to-definition and "unknown type" checks work across files exactly
+like `ella gen` does.
+
+The server has no runtime configuration — point your editor's LSP client at the
+`ella lsp` command for documents with language id `ella` (file extension
+`.ella`). It writes only protocol frames to stdout; logs go to stderr (or to a
+file with `ella lsp --log /path/to/ella-lsp.log`). `--stdio` is accepted for
+client compatibility but stdio is the only transport.
+
+### VS Code
+
+The extension in `tools/syntax` provides syntax highlighting **and** wires up
+the language server automatically.
 
 ```bash
 cd tools/syntax
-code --install-extension ella-syntax-0.0.1.vsix --force
+code --install-extension ella-syntax-0.1.0.vsix --force
 ```
 
-After installation, run `Developer: Reload Window` from the VS Code command palette.
+Run `Developer: Reload Window` afterward. The extension launches `ella lsp` for
+any `.ella` file; ensure `ella` is on your `PATH` or set `ella.server.path` in
+your settings. See [`tools/syntax/README.md`](tools/syntax/README.md) for build
+and configuration details.
+
+### Neovim (built-in LSP)
+
+```lua
+vim.filetype.add({ extension = { ella = "ella" } })
+
+vim.api.nvim_create_autocmd("FileType", {
+  pattern = "ella",
+  callback = function(args)
+    vim.lsp.start({
+      name = "ella-lsp",
+      cmd = { "ella", "lsp" },
+      root_dir = vim.fs.root(args.buf, { ".git", "go.mod" }) or vim.fn.getcwd(),
+    })
+  end,
+})
+```
+
+### Helix
+
+Add to `~/.config/helix/languages.toml`:
+
+```toml
+[language-server.ella-lsp]
+command = "ella"
+args = ["lsp"]
+
+[[language]]
+name = "ella"
+scope = "source.ella"
+file-types = ["ella"]
+comment-token = "#"
+language-servers = ["ella-lsp"]
+roots = [".git", "go.mod"]
+```
+
+### Other editors
+
+Any LSP-capable editor works: configure a server whose command is `ella lsp`,
+associate it with the `.ella` extension / `ella` language id, and (optionally)
+set the workspace root so cross-file features work. On `initialize` the server
+reads `workspaceFolders` / `rootUri` and scans them for `.ella` files.
 
 ## License
 

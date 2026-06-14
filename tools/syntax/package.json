@@ -1,8 +1,8 @@
 {
   "name": "ella-syntax",
-  "displayName": "Ella Syntax",
-  "description": "Syntax highlighting for Ella schema files with a vivid companion theme.",
-  "version": "0.0.1",
+  "displayName": "Ella",
+  "description": "Language support for Ella schema files: syntax highlighting, diagnostics, go-to-definition, hover, outline, completion, find-references, and formatting (via the `ella lsp` language server).",
+  "version": "0.1.0",
   "publisher": "ella-compiler",
   "repository": {
     "type": "git",
@@ -15,6 +15,10 @@
   "categories": [
     "Programming Languages",
     "Themes"
+  ],
+  "main": "./dist/extension.js",
+  "activationEvents": [
+    "onLanguage:ella"
   ],
   "contributes": {
     "languages": [
@@ -43,6 +47,56 @@
         "uiTheme": "vs-dark",
         "path": "./themes/ella-vivid-color-theme.json"
       }
-    ]
+    ],
+    "commands": [
+      {
+        "command": "ella.restartServer",
+        "title": "Ella: Restart Language Server"
+      }
+    ],
+    "configuration": {
+      "title": "Ella",
+      "properties": {
+        "ella.server.path": {
+          "type": "string",
+          "default": "ella",
+          "description": "Path to the `ella` executable that provides the language server. Use an absolute path if it is not on your PATH."
+        },
+        "ella.server.args": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "lsp"
+          ],
+          "description": "Arguments passed to the ella executable to start the language server."
+        },
+        "ella.trace.server": {
+          "type": "string",
+          "enum": [
+            "off",
+            "messages",
+            "verbose"
+          ],
+          "default": "off",
+          "description": "Trace the JSON-RPC communication between VS Code and the ella language server (shown in the 'Ella Language Server' output channel)."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run build",
+    "build": "esbuild src/extension.js --bundle --outfile=dist/extension.js --external:vscode --format=cjs --platform=node",
+    "watch": "npm run build -- --sourcemap --watch",
+    "package": "npm run build && vsce package"
+  },
+  "dependencies": {
+    "vscode-languageclient": "^9.0.1"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^2.24.0",
+    "esbuild": "^0.21.5"
   }
 }

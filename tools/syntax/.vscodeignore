@@ -1,0 +1,10 @@
+# Files excluded from the packaged .vsix. The extension is bundled into
+# dist/extension.js by esbuild, so sources and node_modules are not shipped.
+.vscode/**
+src/**
+node_modules/**
+.gitignore
+.vscodeignore
+package-lock.json
+**/*.map
+**/tsconfig.json
