@@ -55,7 +55,7 @@ func Run(in io.Reader, out io.Writer, logw io.Writer, ver string) error {
 		conn:   NewConn(in, out, logger),
 		logger: logger,
 		docs:   make(map[string]*Document),
-		index:  &Index{symbolByName: map[string]*Symbol{}, diagnostics: map[string][]Diagnostic{}},
+		index:  &Index{symbolIndex: map[string]map[string]*Symbol{}, moduleByURI: map[string]string{}, diagnostics: map[string][]Diagnostic{}},
 	}
 
 	for {
@@ -280,7 +280,7 @@ func (s *Server) onCompletion(msg *Message) {
 		return
 	}
 	ctx := classifyCompletion(linePrefix(d.Text, params.Position))
-	s.conn.Reply(msg.ID, s.completionItems(ctx))
+	s.conn.Reply(msg.ID, s.completionItems(ctx, s.index.moduleForURI(params.TextDocument.URI)))
 }
 
 func (s *Server) onReferences(msg *Message) {
@@ -290,20 +290,24 @@ func (s *Server) onReferences(msg *Message) {
 		return
 	}
 
-	name := s.targetName(params.TextDocument.URI, params.Position)
+	uri := params.TextDocument.URI
+	name := s.targetName(uri, params.Position)
 	if name == "" {
 		s.conn.Reply(msg.ID, []Location{})
 		return
 	}
 
+	// References resolve within a single module's namespace.
+	module := s.index.moduleForURI(uri)
+
 	locations := make([]Location, 0)
 	for _, u := range s.index.usages {
-		if u.Name == name {
+		if u.Name == name && u.Module == module {
 			locations = append(locations, Location{URI: u.URI, Range: u.Range})
 		}
 	}
 	if params.Context.IncludeDeclaration {
-		if sym, ok := s.index.symbolByName[name]; ok {
+		if sym := s.index.lookup(module, name); sym != nil {
 			locations = append(locations, Location{URI: sym.URI, Range: sym.SelectionRange})
 		}
 	}
@@ -338,8 +342,9 @@ func (s *Server) onFormatting(msg *Message) {
 // under the cursor (which keeps things working when the file does not fully
 // parse).
 func (s *Server) resolveSymbol(uri string, pos Position) *Symbol {
+	module := s.index.moduleForURI(uri)
 	if u := s.index.usageAt(uri, pos); u != nil {
-		if sym, ok := s.index.symbolByName[u.Name]; ok {
+		if sym := s.index.lookup(module, u.Name); sym != nil {
 			return sym
 		}
 	}
@@ -348,7 +353,7 @@ func (s *Server) resolveSymbol(uri string, pos Position) *Symbol {
 	}
 	if d := s.docs[uri]; d != nil {
 		if word, _ := wordAt(d.Text, pos); word != "" {
-			if sym, ok := s.index.symbolByName[word]; ok {
+			if sym := s.index.lookup(module, word); sym != nil {
 				return sym
 			}
 		}
@@ -366,7 +371,7 @@ func (s *Server) targetName(uri string, pos Position) string {
 	}
 	if d := s.docs[uri]; d != nil {
 		if word, _ := wordAt(d.Text, pos); word != "" {
-			if _, ok := s.index.symbolByName[word]; ok {
+			if s.index.lookup(s.index.moduleForURI(uri), word) != nil {
 				return word
 			}
 		}
@@ -459,7 +464,7 @@ var builtinTypeNames = []string{
 
 var topLevelKeywords = []string{"const", "enum", "model", "service", "error"}
 
-func (s *Server) completionItems(ctx completionContext) []CompletionItem {
+func (s *Server) completionItems(ctx completionContext, module string) []CompletionItem {
 	items := make([]CompletionItem, 0)
 
 	if ctx == ctxAny {
@@ -472,9 +477,12 @@ func (s *Server) completionItems(ctx completionContext) []CompletionItem {
 		items = append(items, CompletionItem{Label: t, Kind: completionKindTypeParam, Detail: "built-in type"})
 	}
 
-	// Named types (and, outside type context, consts) declared anywhere in the
-	// workspace.
+	// Named types (and, outside type context, consts) declared in the same
+	// module, since references never cross module boundaries.
 	for _, sym := range s.index.symbols {
+		if sym.Module != module {
+			continue
+		}
 		switch sym.Kind {
 		case kindModel:
 			items = append(items, CompletionItem{Label: sym.Name, Kind: completionKindStruct, Detail: "model"})

@@ -52,6 +52,23 @@ func (p *Parser) peek() (*Token, error) {
 func (p *Parser) Parse() (*Program, error) {
 	var nodes []Node
 	var node Node
+	var moduleName string
+
+	// Every file must begin with a module declaration. Comments may precede it
+	// (they are collected during scanning), but no other declaration can. An
+	// entirely empty file (no declarations) is allowed and needs no module.
+	first, err := p.peek()
+	if err != nil {
+		return nil, err
+	}
+	if first.Type != EOF {
+		moduleDecl, err := p.parseModuleDecl()
+		if err != nil {
+			return nil, err
+		}
+		moduleName = moduleDecl.Name.Name
+		nodes = append(nodes, moduleDecl)
+	}
 
 	for {
 		tok, err := p.peek()
@@ -63,6 +80,8 @@ func (p *Parser) Parse() (*Program, error) {
 		}
 
 		switch tok.Type {
+		case MODULE:
+			return nil, NewError(tok, "'module' must be the first declaration and only one module is allowed per file")
 		case CONST:
 			node, err = p.parseConstDecl()
 		case ENUM:
@@ -89,6 +108,27 @@ func (p *Parser) Parse() (*Program, error) {
 	return &Program{
 		Nodes:    nodes,
 		Comments: p.comments,
+		Module:   moduleName,
+	}, nil
+}
+
+func (p *Parser) parseModuleDecl() (*DeclModule, error) {
+	tok, err := p.next()
+	if err != nil {
+		return nil, err
+	}
+	if tok.Type != MODULE {
+		return nil, NewError(tok, "expected 'module' declaration at the start of the file, got %s", tok.Type.String())
+	}
+
+	name, err := p.parseIdenExpr()
+	if err != nil {
+		return nil, err
+	}
+
+	return &DeclModule{
+		Token: tok,
+		Name:  name,
 	}, nil
 }
 

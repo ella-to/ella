@@ -13,11 +13,22 @@ func toError(t *testing.T, err error) *Error {
 	return compilerErr
 }
 
+// withModule prefixes a test source with the now-required module declaration.
+// When the source already begins with a newline the module goes on that first
+// (previously blank) line, so the line numbers of the real content are
+// preserved; otherwise it is added on a new first line.
+func withModule(src string) string {
+	if strings.HasPrefix(src, "\n") {
+		return "module test" + src
+	}
+	return "module test\n" + src
+}
+
 func TestValidator_DuplicateConst(t *testing.T) {
 	source := `const A = 1
 const A = 2
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -37,7 +48,7 @@ func TestValidator_DuplicateEnum(t *testing.T) {
 	source := `enum Status { Active }
 enum Status { Inactive }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -57,7 +68,7 @@ func TestValidator_DuplicateModel(t *testing.T) {
 	source := `model User { Id: string }
 model User { Name: string }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -78,7 +89,7 @@ func TestValidator_OptionalArgBeforeRequired(t *testing.T) {
 	List (limit?: int64, query: string) => (ids: []string)
 }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -103,7 +114,7 @@ service GroupService {
 	List (limit?: string) => (ids: []string)
 }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -128,7 +139,7 @@ service GroupService {
 	List (limit?: int64) => (ids: []string)
 }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -145,7 +156,7 @@ func TestValidator_DuplicateService(t *testing.T) {
 	source := `service Greeting { Hello() }
 service Greeting { Bye() }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -168,7 +179,7 @@ func TestValidator_DuplicateFieldInModel(t *testing.T) {
 	Id: int32
 }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -187,7 +198,7 @@ func TestValidator_DuplicateFieldInModel(t *testing.T) {
 func TestValidator_UndefinedConstReference(t *testing.T) {
 	source := `const A = B
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -207,7 +218,7 @@ func TestValidator_ValidConstReference(t *testing.T) {
 	source := `const A = 1
 const B = A
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -226,7 +237,7 @@ func TestValidator_UnknownFieldType(t *testing.T) {
 	Status: UnknownType
 }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -251,7 +262,7 @@ model User {
 	Address: Address
 }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -269,7 +280,7 @@ func TestValidator_InvalidMapKeyType(t *testing.T) {
 	Values: map<bool, string>
 }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -291,7 +302,7 @@ func TestValidator_ValidMapKeyType(t *testing.T) {
 	IntMap: map<int32, string>
 }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -310,7 +321,7 @@ func TestValidator_DuplicateMethodInService(t *testing.T) {
 	Hello()
 }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -331,7 +342,7 @@ func TestValidator_UnknownMethodArgType(t *testing.T) {
 	Hello(user: UnknownType)
 }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -352,7 +363,7 @@ func TestValidator_UnknownMethodReturnType(t *testing.T) {
 	Hello() => (result: UnknownType)
 }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -375,7 +386,7 @@ func TestValidator_DuplicateEnumValue(t *testing.T) {
 	Active
 }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -397,7 +408,7 @@ func TestValidator_DuplicateEnumIntValue(t *testing.T) {
 	Inactive = 1
 }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -421,7 +432,7 @@ func TestValidator_DuplicateEnumIntValueAutoIncrement(t *testing.T) {
 	Value3 = 2
 }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -443,7 +454,7 @@ func TestValidator_DuplicateEnumStringValue(t *testing.T) {
 	Blue = "red"
 }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -467,7 +478,7 @@ func TestValidator_ValidEnumAutoIncrement(t *testing.T) {
 	Value3
 }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -484,7 +495,7 @@ func TestValidator_NameConflict(t *testing.T) {
 	source := `const User = 1
 model User { Id: string }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -510,7 +521,7 @@ func TestValidator_ModelExtendsUnknown(t *testing.T) {
 	Id: string
 }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -558,7 +569,7 @@ service UserService {
 
 error ErrNotFound { Msg = "not found" }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {

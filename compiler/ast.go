@@ -11,6 +11,7 @@ type Node interface {
 }
 
 func (*IdenExpr) node()          {}
+func (*DeclModule) node()        {}
 func (*ConstDecl) node()         {}
 func (*ValueExprBool) node()     {}
 func (*ValueExprNull) node()     {}
@@ -40,6 +41,7 @@ type Decl interface {
 	decl()
 }
 
+func (*DeclModule) decl()        {}
 func (*ConstDecl) decl()         {}
 func (*DeclEnum) decl()          {}
 func (*DeclEnumSet) decl()       {}
@@ -103,6 +105,19 @@ type IdenExpr struct {
 
 func (ie *IdenExpr) String() string {
 	return ie.Name
+}
+
+// DeclModule names the namespace a file belongs to. It must be the first
+// declaration in every file (only comments may precede it). Files that share the
+// same module name share a namespace; declarations in different modules are
+// isolated, so the same name may be reused across modules without conflict.
+type DeclModule struct {
+	Token *Token // 'module' token
+	Name  *IdenExpr
+}
+
+func (dm *DeclModule) String() string {
+	return "module " + dm.Name.String()
 }
 
 type AssignmentStmt struct {
@@ -439,6 +454,11 @@ func (de *DeclError) String() string {
 type Program struct {
 	Nodes    []Node
 	Comments []*Token
+	// Module is the name declared by this file's `module` declaration. It is
+	// empty only for an empty (declaration-less) file. When programs are merged
+	// the per-file module declarations remain in Nodes, so callers that need the
+	// boundaries should track DeclModule nodes rather than reading this field.
+	Module string
 }
 
 // CommentedNode wraps a Node with its associated comments
@@ -462,6 +482,8 @@ func (p *Program) String() string {
 func getTokenFromNode(n Node) *Token {
 	switch node := n.(type) {
 	case *IdenExpr:
+		return node.Token
+	case *DeclModule:
 		return node.Token
 	case *ConstDecl:
 		return node.Token

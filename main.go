@@ -269,6 +269,14 @@ func genCmd(ins []string, pkg string, out string, debug bool, allowExt bool) {
 		printAST("merged", &prog)
 	}
 
+	// A single generation targets a single module. Different modules are isolated
+	// namespaces and may legitimately reuse names, so merging them into one output
+	// would emit colliding types. Reject that early with a clear message.
+	if mods := distinctModules(&prog); len(mods) > 1 {
+		showErrors(fmt.Errorf("cannot generate from multiple modules in one command: found %s; generate each module separately", strings.Join(mods, ", ")))
+		return
+	}
+
 	errs = compiler.ValidateProgram(&prog)
 	if len(errs) > 0 {
 		showErrors(errs...)
@@ -300,6 +308,24 @@ func genCmd(ins []string, pkg string, out string, debug bool, allowExt bool) {
 	default:
 		showErrors(fmt.Errorf("unsupported output file extension: %s (use .go, _js.go, .ts, or .d.ts)", out))
 	}
+}
+
+// distinctModules returns the unique, named modules declared across a (possibly
+// merged) program, in first-seen order.
+func distinctModules(prog *compiler.Program) []string {
+	var names []string
+	seen := make(map[string]bool)
+	for _, node := range prog.Nodes {
+		mod, ok := node.(*compiler.DeclModule)
+		if !ok || mod.Name == nil || mod.Name.Name == "" {
+			continue
+		}
+		if !seen[mod.Name.Name] {
+			seen[mod.Name.Name] = true
+			names = append(names, mod.Name.Name)
+		}
+	}
+	return names
 }
 
 func hasConstDeclarations(prog *compiler.Program) bool {

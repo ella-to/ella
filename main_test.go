@@ -16,7 +16,7 @@ func TestGenCmd_GeneratesRuntimeTSForConsts(t *testing.T) {
 	outTS := filepath.Join(tmpDir, "schema.gen.ts")
 
 	source := `const TopicUserCreated = "jetdrive.user.created"`
-	if err := os.WriteFile(schemaPath, []byte(source), 0o644); err != nil {
+	if err := os.WriteFile(schemaPath, []byte(withModule(source)), 0o644); err != nil {
 		t.Fatalf("failed writing schema: %v", err)
 	}
 
@@ -39,7 +39,7 @@ func TestGenCmd_SkipsRuntimeTSWhenNoConsts(t *testing.T) {
 	source := `model User {
 	Id: string
 }`
-	if err := os.WriteFile(schemaPath, []byte(source), 0o644); err != nil {
+	if err := os.WriteFile(schemaPath, []byte(withModule(source)), 0o644); err != nil {
 		t.Fatalf("failed writing schema: %v", err)
 	}
 
@@ -60,7 +60,7 @@ func TestGenCmd_GeneratesRuntimeTSForErrors(t *testing.T) {
 	outTS := filepath.Join(tmpDir, "schema.gen.ts")
 
 	source := `error ErrNotFound { Msg = "resource not found" }`
-	if err := os.WriteFile(schemaPath, []byte(source), 0o644); err != nil {
+	if err := os.WriteFile(schemaPath, []byte(withModule(source)), 0o644); err != nil {
 		t.Fatalf("failed writing schema: %v", err)
 	}
 
@@ -89,7 +89,7 @@ service UserService {
 
 error ErrUserNotFound { Msg = "user not found" }
 `
-	if err := os.WriteFile(schemaPath, []byte(source), 0o644); err != nil {
+	if err := os.WriteFile(schemaPath, []byte(withModule(source)), 0o644); err != nil {
 		t.Fatalf("failed writing schema: %v", err)
 	}
 
@@ -154,10 +154,18 @@ func TestHasRuntimeTypeScriptExports(t *testing.T) {
 	}
 }
 
+// withModule prepends the now-required module declaration to a test source.
+func withModule(source string) string {
+	if strings.HasPrefix(source, "\n") {
+		return "module test" + source
+	}
+	return "module test\n" + source
+}
+
 func parseProgramFromSource(t *testing.T, source string) *compiler.Program {
 	t.Helper()
 
-	scanner := compiler.NewScanner(strings.NewReader(source), "test.ella")
+	scanner := compiler.NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := compiler.NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {

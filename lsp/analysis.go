@@ -42,9 +42,11 @@ const (
 )
 
 // Symbol is a top-level declaration that other declarations can refer to by
-// name (a const, enum, model, service, or error).
+// name (a const, enum, model, service, or error). Module records the namespace
+// it was declared in so lookups stay within a single module.
 type Symbol struct {
 	Name           string
+	Module         string
 	Kind           symbolKind
 	URI            string
 	Range          Range // the whole declaration
@@ -54,28 +56,46 @@ type Symbol struct {
 
 // Reference is a place in the source that names a top-level Symbol: a custom
 // type used in a field/argument/return, a model "...Extend", or a const used as
-// an option/const value.
+// an option/const value. Module is the namespace of the file the reference
+// appears in.
 type Reference struct {
-	Name  string
-	URI   string
-	Range Range
+	Name   string
+	Module string
+	URI    string
+	Range  Range
 }
 
 // Index is the analysis result for the whole workspace. It is rebuilt whenever
 // any document changes.
 type Index struct {
-	symbols      []*Symbol
-	symbolByName map[string]*Symbol
-	usages       []*Reference
-	diagnostics  map[string][]Diagnostic // keyed by document URI
+	symbols     []*Symbol
+	symbolIndex map[string]map[string]*Symbol // module -> name -> symbol
+	usages      []*Reference
+	moduleByURI map[string]string       // document URI -> module name
+	diagnostics map[string][]Diagnostic // keyed by document URI
+}
+
+// lookup returns the symbol with the given name declared in the given module,
+// or nil. Resolution never crosses module boundaries.
+func (idx *Index) lookup(module, name string) *Symbol {
+	if byName, ok := idx.symbolIndex[module]; ok {
+		return byName[name]
+	}
+	return nil
+}
+
+// moduleForURI returns the module a document belongs to (empty if unknown).
+func (idx *Index) moduleForURI(uri string) string {
+	return idx.moduleByURI[uri]
 }
 
 // buildIndex parses (from cache), merges and validates every document, then
 // builds the cross-file symbol and reference tables and per-file diagnostics.
 func buildIndex(docs map[string]*Document) *Index {
 	idx := &Index{
-		symbolByName: make(map[string]*Symbol),
-		diagnostics:  make(map[string][]Diagnostic),
+		symbolIndex: make(map[string]map[string]*Symbol),
+		moduleByURI: make(map[string]string),
+		diagnostics: make(map[string][]Diagnostic),
 	}
 
 	// path -> uri so validation errors (which only carry the source path) can be
@@ -116,14 +136,27 @@ func buildIndex(docs map[string]*Document) *Index {
 		idx.addDiag(resolveURI(ce.Token.Pos.Src), diagnosticFromError(ce))
 	}
 
+	currentModule := ""
 	for _, node := range merged.Nodes {
-		if sym := symbolFromNode(node, resolveURI); sym != nil {
+		if mod, ok := node.(*compiler.DeclModule); ok {
+			currentModule = mod.Name.Name
+			if mod.Token != nil {
+				idx.moduleByURI[resolveURI(mod.Token.Pos.Src)] = currentModule
+			}
+			continue
+		}
+		if sym := symbolFromNode(node, currentModule, resolveURI); sym != nil {
 			idx.symbols = append(idx.symbols, sym)
-			if _, exists := idx.symbolByName[sym.Name]; !exists {
-				idx.symbolByName[sym.Name] = sym
+			byName := idx.symbolIndex[currentModule]
+			if byName == nil {
+				byName = make(map[string]*Symbol)
+				idx.symbolIndex[currentModule] = byName
+			}
+			if _, exists := byName[sym.Name]; !exists {
+				byName[sym.Name] = sym
 			}
 		}
-		idx.usages = append(idx.usages, usagesFromNode(node, resolveURI)...)
+		idx.usages = append(idx.usages, usagesFromNode(node, currentModule, resolveURI)...)
 	}
 
 	return idx
@@ -228,7 +261,7 @@ func rangeContains(r Range, pos Position) bool {
 // Symbol / reference collection from the AST
 //
 
-func symbolFromNode(node compiler.Node, resolveURI func(string) string) *Symbol {
+func symbolFromNode(node compiler.Node, module string, resolveURI func(string) string) *Symbol {
 	switch n := node.(type) {
 	case *compiler.ConstDecl:
 		nameTok := n.Assignment.Name.Token
@@ -238,6 +271,7 @@ func symbolFromNode(node compiler.Node, resolveURI func(string) string) *Symbol 
 		}
 		return &Symbol{
 			Name:           n.Assignment.Name.Name,
+			Module:         module,
 			Kind:           kindConst,
 			URI:            resolveURI(nameTok.Pos.Src),
 			Range:          Range{Start: tokenRange(n.Token).Start, End: end},
@@ -245,26 +279,27 @@ func symbolFromNode(node compiler.Node, resolveURI func(string) string) *Symbol 
 			node:           n,
 		}
 	case *compiler.DeclEnum:
-		return declSymbol(kindEnum, n.Token, n.Name.Token, n.CloseCurly, n, resolveURI)
+		return declSymbol(kindEnum, module, n.Token, n.Name.Token, n.CloseCurly, n, resolveURI)
 	case *compiler.DeclModel:
-		return declSymbol(kindModel, n.Token, n.Name.Token, n.CloseCurly, n, resolveURI)
+		return declSymbol(kindModel, module, n.Token, n.Name.Token, n.CloseCurly, n, resolveURI)
 	case *compiler.DeclService:
-		return declSymbol(kindService, n.Token, n.Name.Token, n.CloseCurly, n, resolveURI)
+		return declSymbol(kindService, module, n.Token, n.Name.Token, n.CloseCurly, n, resolveURI)
 	case *compiler.DeclError:
-		return declSymbol(kindError, n.Token, n.Name.Token, n.CloseCurly, n, resolveURI)
+		return declSymbol(kindError, module, n.Token, n.Name.Token, n.CloseCurly, n, resolveURI)
 	}
 	return nil
 }
 
 // declSymbol builds a Symbol for a block declaration that runs from a keyword
 // token to its closing brace.
-func declSymbol(kind symbolKind, keyword, name, closeCurly *compiler.Token, node compiler.Node, resolveURI func(string) string) *Symbol {
+func declSymbol(kind symbolKind, module string, keyword, name, closeCurly *compiler.Token, node compiler.Node, resolveURI func(string) string) *Symbol {
 	rng := Range{Start: tokenRange(keyword).Start, End: tokenRange(name).End}
 	if closeCurly != nil {
 		rng.End = tokenRange(closeCurly).End
 	}
 	return &Symbol{
 		Name:           name.Lit,
+		Module:         module,
 		Kind:           kind,
 		URI:            resolveURI(name.Pos.Src),
 		Range:          rng,
@@ -273,7 +308,7 @@ func declSymbol(kind symbolKind, keyword, name, closeCurly *compiler.Token, node
 	}
 }
 
-func usagesFromNode(node compiler.Node, resolveURI func(string) string) []*Reference {
+func usagesFromNode(node compiler.Node, module string, resolveURI func(string) string) []*Reference {
 	var refs []*Reference
 
 	add := func(name string, tok *compiler.Token) {
@@ -307,6 +342,12 @@ func usagesFromNode(node compiler.Node, resolveURI func(string) string) []*Refer
 			}
 			refs = append(refs, optionUsages(method.Options, resolveURI)...)
 		}
+	}
+
+	// Stamp the enclosing module on every reference so find-references and
+	// go-to-definition resolve within the right namespace.
+	for _, r := range refs {
+		r.Module = module
 	}
 
 	return refs
@@ -388,6 +429,7 @@ var builtinDocs = map[string]string{
 	"float32":   "Built-in type: 32-bit floating point.",
 	"float64":   "Built-in type: 64-bit floating point.",
 	"map":       "Built-in type: `map<KeyType, ValueType>`.",
+	"module":    "Keyword: declares the namespace a file belongs to. Must be the first declaration in the file; only comments may precede it.",
 	"const":     "Keyword: declares a named constant value.",
 	"enum":      "Keyword: declares an enumeration (integer or string valued).",
 	"model":     "Keyword: declares a data structure with typed fields.",

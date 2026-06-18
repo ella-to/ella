@@ -21,7 +21,7 @@ service UserService {
 }
 `
 
-	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(input), "test.ella"))
+	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(withModule(input)), "test.ella"))
 	_, err := parser.Parse()
 
 	if err == nil {
@@ -55,7 +55,7 @@ const AppName = "MyApp
 const Version = "1.0.0"
 `
 
-	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(input), "test.ella"))
+	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(withModule(input)), "test.ella"))
 	_, err := parser.Parse()
 
 	if err == nil {
@@ -81,7 +81,7 @@ model Product {
 }
 `
 
-	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(input), "test.ella"))
+	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(withModule(input)), "test.ella"))
 	_, err := parser.Parse()
 
 	if err == nil {
@@ -114,7 +114,7 @@ service UserService {
 }
 `
 
-	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(input), "test.ella"))
+	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(withModule(input)), "test.ella"))
 	_, err := parser.Parse()
 
 	if err == nil {
@@ -138,7 +138,7 @@ model User {
 }
 `
 
-	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(input), "test.ella"))
+	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(withModule(input)), "test.ella"))
 	_, err := parser.Parse()
 
 	if err == nil {
@@ -161,7 +161,7 @@ func TestErrorDisplayNoFilename(t *testing.T) {
 const X = 
 `
 
-	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(input), "test.ella"))
+	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(withModule(input)), "test.ella"))
 	_, err := parser.Parse()
 
 	if err == nil {
@@ -187,7 +187,7 @@ func TestErrorDisplayErrorDeclaration(t *testing.T) {
 error ErrNotFound { Msg = }
 `
 
-	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(input), "test.ella"))
+	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(withModule(input)), "test.ella"))
 	_, err := parser.Parse()
 
 	if err == nil {

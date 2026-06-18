@@ -8,6 +8,8 @@ import (
 // nodeCategory returns a category string for grouping nodes
 func nodeCategory(n Node) string {
 	switch n.(type) {
+	case *DeclModule:
+		return "module"
 	case *ConstDecl:
 		return "const"
 	case *DeclEnum:
@@ -24,9 +26,11 @@ func nodeCategory(n Node) string {
 }
 
 // categoryOrder returns the sort order for a node's category
-// Order: const=0, enum=1, model=2, service=3, error=4
+// Order: module=-1, const=0, enum=1, model=2, service=3, error=4
 func categoryOrder(n Node) int {
 	switch n.(type) {
+	case *DeclModule:
+		return -1
 	case *ConstDecl:
 		return 0
 	case *DeclEnum:

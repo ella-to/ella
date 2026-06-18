@@ -76,13 +76,13 @@ service RpcBusinessService {
 	GetByName (name: string) => (result: Business)
 }`
 
-	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(input), "test.ella"))
+	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(withModule(input)), "test.ella"))
 	prog, err := parser.Parse()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	formatted := compiler.Format(prog)
+	formatted := stripModule(compiler.Format(prog))
 	if formatted != strings.TrimSpace(expected) {
 		t.Errorf("formatted output does not match expected.\nExpected:\n%s\nGot:\n%s", expected, formatted)
 	}
@@ -137,13 +137,13 @@ error ErrUserNotFound { Msg = "user not found" }
 error ErrUserAlreadyExists { Msg = "user already exists" }
 error ErrInvalidInput { Msg = "invalid input provided" }`
 
-	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(input), "test.ella"))
+	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(withModule(input)), "test.ella"))
 	prog, err := parser.Parse()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	formatted := compiler.Format(prog)
+	formatted := stripModule(compiler.Format(prog))
 	if formatted != strings.TrimSpace(expected) {
 		t.Errorf("formatted output does not match expected.\nExpected:\n%s\nGot:\n%s", expected, formatted)
 	}
@@ -188,13 +188,13 @@ model Person {
 	Age: int32
 }`
 
-	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(input), "test.ella"))
+	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(withModule(input)), "test.ella"))
 	prog, err := parser.Parse()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	formatted := compiler.Format(prog)
+	formatted := stripModule(compiler.Format(prog))
 	if formatted != strings.TrimSpace(expected) {
 		t.Errorf("formatted output does not match expected.\nExpected:\n%s\nGot:\n%s", expected, formatted)
 	}
@@ -259,13 +259,13 @@ error ErrNotFound { Msg = "resource not found" }
 # Authentication errors
 error ErrUnauthorized { Msg = "unauthorized access" }`
 
-	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(input), "test.ella"))
+	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(withModule(input)), "test.ella"))
 	prog, err := parser.Parse()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	formatted := compiler.Format(prog)
+	formatted := stripModule(compiler.Format(prog))
 	if formatted != strings.TrimSpace(expected) {
 		t.Errorf("formatted output does not match expected.\nExpected:\n%s\nGot:\n%s", expected, formatted)
 	}
@@ -292,13 +292,13 @@ model Empty {
 service EmptyService {
 }`
 
-	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(input), "test.ella"))
+	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(withModule(input)), "test.ella"))
 	prog, err := parser.Parse()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	formatted := compiler.Format(prog)
+	formatted := stripModule(compiler.Format(prog))
 	if formatted != strings.TrimSpace(expected) {
 		t.Errorf("formatted output does not match expected.\nExpected:\n%s\nGot:\n%s", expected, formatted)
 	}
@@ -333,13 +333,13 @@ service DataService {
 	Process (input: []string, options: map<string, bool>) => (result: string)
 }`
 
-	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(input), "test.ella"))
+	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(withModule(input)), "test.ella"))
 	prog, err := parser.Parse()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	formatted := compiler.Format(prog)
+	formatted := stripModule(compiler.Format(prog))
 	if formatted != strings.TrimSpace(expected) {
 		t.Errorf("formatted output does not match expected.\nExpected:\n%s\nGot:\n%s", expected, formatted)
 	}
@@ -360,13 +360,13 @@ const C = 3
 const D = "hello"
 const E = true`
 
-	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(input), "test.ella"))
+	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(withModule(input)), "test.ella"))
 	prog, err := parser.Parse()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	formatted := compiler.Format(prog)
+	formatted := stripModule(compiler.Format(prog))
 	if formatted != strings.TrimSpace(expected) {
 		t.Errorf("formatted output does not match expected.\nExpected:\n%s\nGot:\n%s", expected, formatted)
 	}
@@ -383,13 +383,13 @@ error ErrThree { Msg = "error three" }
 error ErrTwo { Msg = "error two" }
 error ErrThree { Msg = "error three" }`
 
-	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(input), "test.ella"))
+	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(withModule(input)), "test.ella"))
 	prog, err := parser.Parse()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	formatted := compiler.Format(prog)
+	formatted := stripModule(compiler.Format(prog))
 	if formatted != strings.TrimSpace(expected) {
 		t.Errorf("formatted output does not match expected.\nExpected:\n%s\nGot:\n%s", expected, formatted)
 	}
@@ -413,13 +413,13 @@ enum Role {
 	Admin
 }`
 
-	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(input), "test.ella"))
+	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(withModule(input)), "test.ella"))
 	prog, err := parser.Parse()
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	formatted := compiler.Format(prog)
+	formatted := stripModule(compiler.Format(prog))
 	if formatted != strings.TrimSpace(expected) {
 		t.Errorf("formatted output does not match expected.\nExpected:\n%s\nGot:\n%s", expected, formatted)
 	}

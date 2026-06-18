@@ -7,6 +7,9 @@
       "include": "#comments"
     },
     {
+      "include": "#module"
+    },
+    {
       "include": "#service"
     },
     {
@@ -155,6 +158,22 @@
         {
           "name": "punctuation.definition.type.end.ella",
           "match": "(?<!=)>"
+        }
+      ]
+    },
+    "module": {
+      "patterns": [
+        {
+          "name": "meta.definition.module.ella",
+          "match": "^(\\s*)(module)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "2": {
+              "name": "keyword.declaration.module.ella"
+            },
+            "3": {
+              "name": "entity.name.namespace.ella"
+            }
+          }
         }
       ]
     },

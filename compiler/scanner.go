@@ -135,6 +135,8 @@ func (s *Scanner) ScanReservedWord() *Token {
 	}
 
 	switch lit {
+	case "module":
+		return newToken(MODULE, pos, lit)
 	case "const":
 		return newToken(CONST, pos, lit)
 	case "enum":

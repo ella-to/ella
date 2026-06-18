@@ -27,21 +27,61 @@ func NewValidator(program *Program) *Validator {
 	}
 }
 
-// Validate validates the program and returns any errors
+// Validate validates the program and returns any errors.
+//
+// Declarations are partitioned by their enclosing module so that each module is
+// an isolated namespace: the same name may be reused across modules without
+// conflict, and type references resolve only within the same module. Files that
+// share a module name are validated together as one namespace.
 func (v *Validator) Validate() []error {
-	// First pass: collect all declarations
-	v.collectDeclarations()
+	for _, group := range partitionByModule(v.program.Nodes) {
+		// Reset the per-namespace tables so declarations in one module never
+		// shadow or collide with identically named declarations in another.
+		v.consts = make(map[string]*ConstDecl)
+		v.enums = make(map[string]*DeclEnum)
+		v.models = make(map[string]*DeclModel)
+		v.services = make(map[string]*DeclService)
 
-	// Second pass: validate each node
-	for _, node := range v.program.Nodes {
-		v.validateNode(node)
+		// First pass: collect all declarations
+		v.collectDeclarations(group)
+
+		// Second pass: validate each node
+		for _, node := range group {
+			v.validateNode(node)
+		}
+
+		// Third pass: optional arguments sharing a name must share a type across
+		// the module, so a single With<Name> option can serve all of them
+		v.validateOptionalArgConsistency(group)
 	}
 
-	// Third pass: optional arguments sharing a name must share a type across
-	// the whole program, so a single With<Name> option can serve all of them
-	v.validateOptionalArgConsistency()
-
 	return v.errors
+}
+
+// partitionByModule groups nodes by the module they belong to, preserving the
+// order in which modules are first encountered. The leading DeclModule node acts
+// as the boundary marker; nodes appearing before any module declaration (only
+// possible in a malformed merge) are grouped under the empty module name.
+func partitionByModule(nodes []Node) [][]Node {
+	var order []string
+	groups := make(map[string][]Node)
+
+	current := ""
+	for _, node := range nodes {
+		if mod, ok := node.(*DeclModule); ok {
+			current = mod.Name.Name
+		}
+		if _, seen := groups[current]; !seen {
+			order = append(order, current)
+		}
+		groups[current] = append(groups[current], node)
+	}
+
+	result := make([][]Node, 0, len(order))
+	for _, name := range order {
+		result = append(result, groups[name])
+	}
+	return result
 }
 
 func (v *Validator) addError(token *Token, format string, args ...interface{}) {
@@ -51,8 +91,8 @@ func (v *Validator) addError(token *Token, format string, args ...interface{}) {
 	})
 }
 
-func (v *Validator) collectDeclarations() {
-	for _, node := range v.program.Nodes {
+func (v *Validator) collectDeclarations(nodes []Node) {
+	for _, node := range nodes {
 		switch n := node.(type) {
 		case *ConstDecl:
 			name := n.Assignment.Name.Name
@@ -327,7 +367,7 @@ func (v *Validator) validateService(s *DeclService) {
 // name (case-insensitive on the first letter, matching the generated
 // With<Name> function and the camelCase wire key) use the same type in every
 // method across all services.
-func (v *Validator) validateOptionalArgConsistency() {
+func (v *Validator) validateOptionalArgConsistency(nodes []Node) {
 	type optionalArgUse struct {
 		arg     *DeclNameTypePair
 		service string
@@ -336,7 +376,7 @@ func (v *Validator) validateOptionalArgConsistency() {
 
 	seen := make(map[string]optionalArgUse)
 
-	for _, node := range v.program.Nodes {
+	for _, node := range nodes {
 		s, ok := node.(*DeclService)
 		if !ok {
 			continue

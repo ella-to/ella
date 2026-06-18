@@ -205,6 +205,9 @@ func (g *GoGenerator) typeNeedsTime(t DeclType) bool {
 
 func (g *GoGenerator) generateNode(node Node) ([]ast.Decl, error) {
 	switch n := node.(type) {
+	case *DeclModule:
+		// Modules are a source-level namespace only; they produce no Go output.
+		return nil, nil
 	case *ConstDecl:
 		return g.generateConst(n)
 	case *DeclEnum:

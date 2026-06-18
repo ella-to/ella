@@ -122,7 +122,7 @@ func TestServerEndToEnd(t *testing.T) {
 	client.notify("initialized", map[string]any{})
 
 	// open a document with a model used by a service in the same file
-	src := "model User {\n\tId: string\n}\nservice S {\n\tGet (id: string) => (user: User)\n}\n"
+	src := "module x\nmodel User {\n\tId: string\n}\nservice S {\n\tGet (id: string) => (user: User)\n}\n"
 	client.notify("textDocument/didOpen", DidOpenTextDocumentParams{
 		TextDocument: TextDocumentItem{URI: "file:///x.ella", LanguageID: "ella", Version: 1, Text: src},
 	})
@@ -140,18 +140,19 @@ func TestServerEndToEnd(t *testing.T) {
 		t.Fatalf("expected no diagnostics, got %+v", diagParams.Diagnostics)
 	}
 
-	// go-to-definition on the "User" return type (line 4, inside "User")
+	// go-to-definition on the "User" return type (line 5, inside "User").
+	// The module declaration on line 0 shifts the model down to line 1.
 	client.request(2, "textDocument/definition", TextDocumentPositionParams{
 		TextDocument: TextDocumentIdentifier{URI: "file:///x.ella"},
-		Position:     Position{Line: 4, Character: 30},
+		Position:     Position{Line: 5, Character: 30},
 	})
 	defResp := client.read()
 	var loc Location
 	if err := json.Unmarshal(defResp.Result, &loc); err != nil {
 		t.Fatalf("unmarshal definition result: %v (raw: %s)", err, defResp.Result)
 	}
-	if loc.URI != "file:///x.ella" || loc.Range.Start.Line != 0 {
-		t.Fatalf("expected definition at model User (line 0), got %+v", loc)
+	if loc.URI != "file:///x.ella" || loc.Range.Start.Line != 1 {
+		t.Fatalf("expected definition at model User (line 1), got %+v", loc)
 	}
 
 	// document symbols

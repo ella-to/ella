@@ -11,7 +11,7 @@ func TestGoGenerator_Const(t *testing.T) {
 const Timeout = 1m
 const Topic = "test.topic"
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -43,7 +43,7 @@ func TestGoGenerator_StringConsts(t *testing.T) {
 const TopicUserStatusUpdated = "jetdrive.user.status.updated"
 const TopicUserDeleted = "jetdrive.user.deleted"
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -75,7 +75,7 @@ func TestGoGenerator_TemplateStringConsts(t *testing.T) {
 const TopicUserActionUpdated = "user.{{userId}}.{{action}}.updated"
 const TopicGlobal = "global.event"
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -130,7 +130,7 @@ enum StringEnum {
 	Blue = "blue"
 }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -195,7 +195,7 @@ func TestGoGenerator_EnumWithPlaceholder(t *testing.T) {
 	Critical
 }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -250,7 +250,7 @@ func TestGoGenerator_Model(t *testing.T) {
 	Metadata: map<string, string>
 }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -303,7 +303,7 @@ model User {
 	Address: Address
 }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -345,7 +345,7 @@ model User {
 }
 `
 
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -397,7 +397,7 @@ model User {
 }
 `
 
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -430,7 +430,7 @@ func TestGoGenerator_Service(t *testing.T) {
 	SayBye(name: string) => (result: string)
 }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -480,7 +480,7 @@ service GroupService {
 	List (limit?: int64) => (ids: []string)
 }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -558,7 +558,7 @@ service RoleService {
 	GetRoleLabel(userId: string) => (roleLabel: RoleLabel)
 }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -602,7 +602,7 @@ service RoleService {
 }
 `
 
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -639,7 +639,7 @@ service BusinessService {
 }
 `
 
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -671,7 +671,7 @@ service BusinessService {
 }
 `
 
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -693,7 +693,7 @@ func TestGoGenerator_Error(t *testing.T) {
 	source := `error ErrNotFound { Msg = "resource not found" }
 error ErrInvalidInput { Code = 400 Msg = "invalid input" }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
@@ -758,7 +758,7 @@ service BusinessService {
 error ErrBusinessNameMissing { Msg = "business name is required" }
 error ErrBusinessNotFound { Msg = "business not found" }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {

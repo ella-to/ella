@@ -8,8 +8,28 @@ import (
 	"ella.to/ella/compiler"
 )
 
+// withModule prefixes a test source with the now-required module declaration.
+// When the source already begins with a newline the module goes on that first
+// (previously blank) line so content line numbers are preserved; otherwise it
+// is added on a new first line.
+func withModule(src string) string {
+	if strings.HasPrefix(src, "\n") {
+		return "module test" + src
+	}
+	return "module test\n" + src
+}
+
+// stripModule removes the leading `module ...` line (and the blank line after
+// it) that Format now emits, so tests can keep asserting on the rest.
+func stripModule(formatted string) string {
+	if i := strings.IndexByte(formatted, '\n'); i >= 0 && strings.HasPrefix(formatted, "module ") {
+		return strings.TrimLeft(formatted[i+1:], "\n")
+	}
+	return formatted
+}
+
 func runParserTest(t *testing.T, input string, output string) {
-	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(input), "test.ella"))
+	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(withModule(input)), "test.ella"))
 
 	prog, err := parser.Parse()
 	if err != nil {
@@ -20,6 +40,10 @@ func runParserTest(t *testing.T, input string, output string) {
 	var sb strings.Builder
 
 	for _, node := range prog.Nodes {
+		// The injected module declaration is not part of what these tests assert.
+		if _, ok := node.(*compiler.DeclModule); ok {
+			continue
+		}
 		sb.WriteString(node.String())
 		sb.WriteString("\n")
 	}
@@ -66,7 +90,7 @@ func TestConstStringNoQuoteParserError(t *testing.T) {
 	// (user probably forgot to quote the string)
 	input := `const TopicDeviceCreated = jetdrive.device.created`
 
-	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(input), "test.ella"))
+	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(withModule(input)), "test.ella"))
 	_, err := parser.Parse()
 
 	if err == nil {
@@ -179,7 +203,7 @@ service UserService {
 }
 `
 
-	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(input), "test.ella"))
+	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(withModule(input)), "test.ella"))
 	_, err := parser.Parse()
 
 	if err == nil {
@@ -197,7 +221,7 @@ func TestCommentParser(t *testing.T) {
 # This is a comment
 const PI = 3.14 # Inline comment
 `
-	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(input), "test.ella"))
+	parser := compiler.NewParser(compiler.NewScanner(strings.NewReader(withModule(input)), "test.ella"))
 	prog, err := parser.Parse()
 	if err != nil {
 		t.Errorf("unexpected error: %v", err)

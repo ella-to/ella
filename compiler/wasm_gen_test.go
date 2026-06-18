@@ -10,7 +10,7 @@ func TestWasmGenerator_ServiceOptionalArgs(t *testing.T) {
 	List (query: string, limit?: int64, tags?: []string) => (ids: []string)
 }
 `
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {

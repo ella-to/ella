@@ -6,9 +6,23 @@ import (
 )
 
 func mkDoc(uri, text string) *Document {
-	d := &Document{URI: uri, Path: URIToPath(uri), Text: text}
+	d := &Document{URI: uri, Path: URIToPath(uri), Text: withTestModule(text)}
 	d.parse()
 	return d
+}
+
+// withTestModule prepends the now-required `module test` declaration to a test
+// source, unless it already declares a module. When the source begins with a
+// newline the module replaces that blank first line, preserving content line
+// numbers so position-based assertions keep working.
+func withTestModule(text string) string {
+	if strings.HasPrefix(strings.TrimLeft(text, " \t\r\n"), "module ") {
+		return text
+	}
+	if strings.HasPrefix(text, "\n") {
+		return "module test" + text
+	}
+	return "module test\n" + text
 }
 
 func indexOf(docs ...*Document) (*Index, map[string]*Document) {
@@ -49,14 +63,14 @@ service UserService {
 	if got := idx.diagnostics["file:///a.ella"]; len(got) != 0 {
 		t.Fatalf("expected no diagnostics, got %+v", got)
 	}
-	if _, ok := idx.symbolByName["User"]; !ok {
+	if idx.lookup("test", "User") == nil {
 		t.Fatalf("expected User symbol in index")
 	}
-	if _, ok := idx.symbolByName["UserService"]; !ok {
+	if idx.lookup("test", "UserService") == nil {
 		t.Fatalf("expected UserService symbol in index")
 	}
-	if idx.symbolByName["User"].Kind != kindModel {
-		t.Fatalf("expected User to be a model, got %s", idx.symbolByName["User"].Kind)
+	if idx.lookup("test", "User").Kind != kindModel {
+		t.Fatalf("expected User to be a model, got %s", idx.lookup("test", "User").Kind)
 	}
 }
 
@@ -147,6 +161,36 @@ service UserService {
 	}
 }
 
+func TestModulesIsolateNames(t *testing.T) {
+	// Two files in different modules reuse the name "User". This must not
+	// produce duplicate-declaration diagnostics, and a "User" usage must resolve
+	// within its own module only.
+	a := mkDoc("file:///a.ella", "module a\nmodel User {\n\tId: string\n}\nservice S {\n\tGet () => (u: User)\n}\n")
+	b := mkDoc("file:///b.ella", "module b\nmodel User {\n\tName: string\n}\n")
+	idx, docs := indexOf(a, b)
+
+	for uri, diags := range idx.diagnostics {
+		if len(diags) != 0 {
+			t.Fatalf("expected no diagnostics for %s, got %+v", uri, diags)
+		}
+	}
+
+	if got := idx.lookup("a", "User"); got == nil || got.URI != a.URI {
+		t.Fatalf("expected User in module a to resolve to a.ella, got %+v", got)
+	}
+	if got := idx.lookup("b", "User"); got == nil || got.URI != b.URI {
+		t.Fatalf("expected User in module b to resolve to b.ella, got %+v", got)
+	}
+
+	// Go-to-definition from the usage in module a resolves to a's User, not b's.
+	s := &Server{docs: docs, index: idx}
+	pos := posOf(t, a.Text, "User)")
+	sym := s.resolveSymbol(a.URI, pos)
+	if sym == nil || sym.URI != a.URI {
+		t.Fatalf("expected User usage in a.ella to resolve to a.ella, got %+v", sym)
+	}
+}
+
 func TestModelExtendsUsage(t *testing.T) {
 	src := `
 model Base {
@@ -218,7 +262,7 @@ func TestCompletionItems(t *testing.T) {
 	idx, docs := indexOf(mkDoc("file:///a.ella", "model User {\n\tId: string\n}\nenum Status {\n\tA\n}\n"))
 	s := &Server{docs: docs, index: idx}
 
-	typeItems := s.completionItems(ctxType)
+	typeItems := s.completionItems(ctxType, "test")
 	if !hasLabel(typeItems, "User") || !hasLabel(typeItems, "Status") || !hasLabel(typeItems, "string") {
 		t.Fatalf("type completion missing expected items: %+v", labels(typeItems))
 	}
@@ -226,7 +270,7 @@ func TestCompletionItems(t *testing.T) {
 		t.Fatalf("type completion should not offer the 'model' keyword")
 	}
 
-	anyItems := s.completionItems(ctxAny)
+	anyItems := s.completionItems(ctxAny, "test")
 	if !hasLabel(anyItems, "model") || !hasLabel(anyItems, "User") {
 		t.Fatalf("any completion missing expected items: %+v", labels(anyItems))
 	}

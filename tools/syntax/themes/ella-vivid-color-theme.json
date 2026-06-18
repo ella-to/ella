@@ -23,6 +23,7 @@
     {
       "name": "Declaration Keywords",
       "scope": [
+        "keyword.declaration.module.ella",
         "keyword.declaration.constant.ella",
         "keyword.declaration.enum.ella",
         "keyword.declaration.model.ella",
@@ -31,6 +32,16 @@
       ],
       "settings": {
         "foreground": "#FFFFFF",
+        "fontStyle": "bold"
+      }
+    },
+    {
+      "name": "Module Name",
+      "scope": [
+        "entity.name.namespace.ella"
+      ],
+      "settings": {
+        "foreground": "#2DD4BF",
         "fontStyle": "bold"
       }
     },

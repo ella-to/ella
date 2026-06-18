@@ -120,6 +120,18 @@ func TestScanConst(t *testing.T) {
 	runTestScanner(t, input, expected)
 }
 
+func TestScanModule(t *testing.T) {
+	input := `module foo`
+
+	expected := []*compiler.Token{
+		{Type: compiler.MODULE, Pos: Pos{Offset: 0, Line: 1, Column: 1}, Lit: "module"},
+		{Type: compiler.IDENTIFIER, Pos: Pos{Offset: 7, Line: 1, Column: 8}, Lit: "foo"},
+		{Type: compiler.EOF, Pos: Pos{Offset: 9, Line: 1, Column: 10}, Lit: ""},
+	}
+
+	runTestScanner(t, input, expected)
+}
+
 func TestScanModel(t *testing.T) {
 	input := `
 model Circle {

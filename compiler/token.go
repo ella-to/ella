@@ -38,6 +38,7 @@ const (
 	ERROR
 	COMMENT
 	IDENTIFIER
+	MODULE
 	CONST
 	ENUM
 	MODEL
@@ -90,6 +91,7 @@ var tokenTypes = [...]string{
 	EOF:                         "EOF",
 	COMMENT:                     "COMMENT",
 	IDENTIFIER:                  "IDENTIFIER",
+	MODULE:                      "MODULE",
 	CONST:                       "CONST",
 	ENUM:                        "ENUM",
 	MODEL:                       "MODEL",

@@ -64,6 +64,52 @@ The output format is determined by the file extension of the output path:
 
 ## Schema Language
 
+### Modules
+
+Every `.ella` file **must** begin with a `module` declaration. It is the first
+thing in the file — only comments may appear before it, never a `const`, `enum`,
+`model`, `service`, or `error`.
+
+```ella
+module billing
+
+const Currency = "USD"
+
+model Invoice {
+    Id: string
+    Total: int64
+}
+```
+
+A module is a **namespace**. Files that share the same module name are compiled
+together as one namespace, so a model, enum, const, or service can be split
+across several files. Declarations in *different* modules are fully isolated:
+the same name may be reused across modules without conflict, and a type
+reference resolves only within its own module.
+
+```ella
+# users.ella
+module users
+
+model User { Id: string }
+```
+
+```ella
+# orders.ella
+module orders
+
+# This "User" does not collide with the one in module `users`.
+model User { OrderId: string }
+```
+
+This is what keeps tooling (and the language server in particular) from
+reporting false "duplicate declaration" errors when two unrelated projects in
+the same workspace happen to use the same names — give them different module
+names and they stay independent.
+
+> The schema fragments in the sections below omit the `module` line for brevity,
+> but a real file always starts with one.
+
 ### Constants
 
 Constants define fixed values. They're useful for event topic names, configuration thresholds, or anything you want shared across generated code.
@@ -311,7 +357,9 @@ over **stdio** and provides:
 Diagnostics combine scanner/parser errors with full schema validation, and the
 server is **workspace-aware**: it indexes every `.ella` file under the workspace
 root, so go-to-definition and "unknown type" checks work across files exactly
-like `ella gen` does.
+like `ella gen` does. Resolution is **module-scoped** — symbols, references, and
+duplicate-name checks stay within a module, so two projects that share names but
+declare different modules never interfere with each other.
 
 The server has no runtime configuration — point your editor's LSP client at the
 `ella lsp` command for documents with language id `ella` (file extension

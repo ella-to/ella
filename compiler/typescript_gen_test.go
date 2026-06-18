@@ -8,7 +8,7 @@ import (
 func parseProgramForTypeScriptTest(t *testing.T, source string) *Program {
 	t.Helper()
 
-	scanner := NewScanner(strings.NewReader(source), "test.ella")
+	scanner := NewScanner(strings.NewReader(withModule(source)), "test.ella")
 	parser := NewParser(scanner)
 	program, err := parser.Parse()
 	if err != nil {
